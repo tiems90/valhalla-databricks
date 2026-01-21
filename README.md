@@ -1,5 +1,8 @@
 # Valhalla Routing Engine for Databricks
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Databricks](https://img.shields.io/badge/Databricks-Runtime%2018.0%2B-orange.svg)](https://docs.databricks.com/)
+
 Production-ready Databricks Asset Bundle for deploying and operating the [Valhalla](https://github.com/valhalla/valhalla) open-source routing engine on Databricks Runtime 18.0+.
 
 ## Overview
@@ -35,7 +38,7 @@ flowchart LR
 
 - Databricks workspace (AWS, Azure, or GCP)
 - Unity Catalog enabled
-- Databricks Runtime 18.0.x or higher
+- **Databricks Runtime 17.3.x LTS** ✅ or **18.0.x** ✅ (standard or Photon)
 - Permissions to create catalogs, schemas, and volumes
 - Databricks CLI installed ([installation guide](https://docs.databricks.com/dev-tools/cli/index.html))
 
@@ -45,7 +48,7 @@ flowchart LR
 
 ```bash
 git clone <repository-url>
-cd valhalla_20260121
+cd valhalla
 ```
 
 ### 2. Configure Unity Catalog
@@ -67,31 +70,34 @@ variables:
 ### 3. Authenticate
 
 ```bash
-# For GCP (default)
-databricks auth login --profile gcp --host <your-workspace-url>
+# Choose your cloud provider (examples below)
+databricks auth login --profile <profile-name> --host <your-workspace-url>
 
-# For Azure
-databricks auth login --profile azure --host <your-workspace-url>
+# Example for GCP
+databricks auth login --profile gcp --host <your-gcp-workspace-url>
 
-# For AWS
-databricks auth login --profile aws --host <your-workspace-url>
+# Example for Azure
+databricks auth login --profile azure --host <your-azure-workspace-url>
+
+# Example for AWS
+databricks auth login --profile aws --host <your-aws-workspace-url>
 ```
 
 ### 4. Deploy
 
 ```bash
 # Validate configuration
-databricks bundle validate -t gcp
+databricks bundle validate -t <target>  # e.g., gcp, azure, or aws
 
 # Deploy to workspace
-databricks bundle deploy -t gcp
+databricks bundle deploy -t <target>  # e.g., gcp, azure, or aws
 ```
 
 ### 5. Run Test Job
 
 ```bash
 # Run end-to-end test (Andorra region)
-databricks bundle run valhalla_test_job -t gcp
+databricks bundle run valhalla_test_job -t <target>  # e.g., gcp, azure, or aws
 ```
 
 **Expected Duration**: 25-35 minutes
@@ -225,7 +231,7 @@ routes_df = df.withColumn("route", route_udf("origin_lat", "origin_lon", "dest_l
 
 **Symptom**: Task 1 fails with GCC errors
 
-**Solution**: Ensure you're using DBR 18.0.x or higher with the compiler flags patch applied in `valhalla_00_initial_setup.py`
+**Solution**: Ensure you're using DBR 17.3.x or 18.0.x with the compiler flags patch applied in `valhalla_00_initial_setup.py`
 
 ### Volume Permission Errors
 
@@ -250,23 +256,10 @@ routes_df = df.withColumn("route", route_udf("origin_lat", "origin_lon", "dest_l
 
 See [DEPLOYMENT.md](DEPLOYMENT.md) for more troubleshooting guidance.
 
-## Cost Estimation
-
-### GCP Pricing Example (Andorra Test Region)
-
-| Task | Machine Type | Duration | Cost |
-|------|-------------|----------|------|
-| Compilation | n2-highmem-32 | 15 min | ~$0.80 |
-| PBF Processing | n2-highmem-32 | 5 min | ~$0.27 |
-| Testing | n2-standard-8 (3 nodes) | 5 min | ~$0.20 |
-| **Total** | | **25 min** | **~$1.27** |
-
-*Costs vary by cloud provider and region. Add Databricks platform costs (DBU consumption).*
-
 ## Project Structure
 
 ```
-valhalla_20260121/
+valhalla/
 ├── databricks.yml                          # Bundle configuration
 ├── resources/
 │   └── valhalla_test_job.yml              # End-to-end test job
@@ -312,14 +305,12 @@ Contributions welcome! Please ensure:
 
 ## License
 
-This project provides a deployment framework for Valhalla. Valhalla itself is licensed under MIT License. See the [Valhalla repository](https://github.com/valhalla/valhalla) for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Support
+This project provides a deployment framework for Valhalla. Valhalla itself is also licensed under the MIT License. See the [Valhalla repository](https://github.com/valhalla/valhalla) for details.
 
-For issues specific to this Databricks implementation:
-- Open an issue in this repository
-- Include cluster logs, notebook output, and DBR version
+## Disclaimer
 
-For Valhalla routing engine questions:
-- See [Valhalla documentation](https://valhalla.github.io/valhalla/)
-- Visit [Valhalla GitHub discussions](https://github.com/valhalla/valhalla/discussions)
+**This is a community project provided AS-IS with no official support.** Use at your own risk.
+
+For Valhalla routing engine questions, refer to the official [Valhalla documentation](https://valhalla.github.io/valhalla/) and [Valhalla GitHub repository](https://github.com/valhalla/valhalla).

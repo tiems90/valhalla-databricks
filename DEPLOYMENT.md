@@ -41,7 +41,7 @@ Your Databricks user needs:
 ### Workspace Requirements
 
 - **Unity Catalog enabled** (check in workspace settings)
-- **Databricks Runtime 18.0.x or higher**
+- **Databricks Runtime 17.3.x (LTS)** ✅ or **18.0.x** ✅ or higher
 - **Cloud provider**: AWS, Azure, or GCP
 
 ## Initial Setup
@@ -50,7 +50,7 @@ Your Databricks user needs:
 
 ```bash
 git clone <repository-url>
-cd valhalla_20260121
+cd valhalla
 ```
 
 ### 2. Configure Unity Catalog Identifiers
@@ -105,11 +105,16 @@ node_type_id: "n2-highmem-32"  # 32 vCPUs, 256 GB RAM
 node_type_id: "n2-standard-8"  # 8 vCPUs, 32 GB RAM
 ```
 
-#### Spark Version
+#### Spark Version and Runtime Engine
 
 ```yaml
-spark_version: "18.0.x-scala2.13"
+spark_version: "18.0.x-scala2.13"  # Or "17.3.x-scala2.13" for LTS
+runtime_engine: "STANDARD"  # Or "PHOTON" for Photon acceleration
 ```
+
+**Note**: Photon is specified via the `runtime_engine` parameter, not in the spark_version string.
+- ❌ Wrong: `spark_version: "18.0.x-photon-scala2.13"`
+- ✅ Correct: `spark_version: "18.0.x-scala2.13"` + `runtime_engine: "PHOTON"`
 
 ### Azure
 
@@ -136,10 +141,11 @@ node_type_id: "Standard_E32s_v3"  # 32 vCPUs, 256 GB RAM
 node_type_id: "Standard_D8s_v3"  # 8 vCPUs, 32 GB RAM
 ```
 
-#### Spark Version
+#### Spark Version and Runtime Engine
 
 ```yaml
-spark_version: "18.0.x-scala2.13"
+spark_version: "18.0.x-scala2.13"  # Or "17.3.x-scala2.13" for LTS
+runtime_engine: "STANDARD"  # Or "PHOTON" for Photon acceleration
 ```
 
 ### AWS
@@ -167,10 +173,11 @@ node_type_id: "r5.8xlarge"  # 32 vCPUs, 256 GB RAM
 node_type_id: "m5.2xlarge"  # 8 vCPUs, 32 GB RAM
 ```
 
-#### Spark Version
+#### Spark Version and Runtime Engine
 
 ```yaml
-spark_version: "18.0.x-scala2.13"
+spark_version: "18.0.x-scala2.13"  # Or "17.3.x-scala2.13" for LTS
+runtime_engine: "STANDARD"  # Or "PHOTON" for Photon acceleration
 ```
 
 ## Unity Catalog Setup
@@ -214,14 +221,13 @@ SHOW VOLUMES IN your_catalog.your_schema LIKE 'valhalla_region';
 ### 1. Validate Configuration
 
 ```bash
-# For GCP (default)
-databricks bundle validate -t gcp
+# Choose your target cloud
+databricks bundle validate -t <target>
 
-# For Azure
-databricks bundle validate -t azure
-
-# For AWS
-databricks bundle validate -t aws
+# Examples:
+# databricks bundle validate -t gcp
+# databricks bundle validate -t azure
+# databricks bundle validate -t aws
 ```
 
 **Expected Output**:
@@ -232,20 +238,19 @@ Validation successful!
 ### 2. Deploy to Workspace
 
 ```bash
-# For GCP
-databricks bundle deploy -t gcp
+# Choose your target cloud
+databricks bundle deploy -t <target>
 
-# For Azure
-databricks bundle deploy -t azure
-
-# For AWS
-databricks bundle deploy -t aws
+# Examples:
+# databricks bundle deploy -t gcp
+# databricks bundle deploy -t azure
+# databricks bundle deploy -t aws
 ```
 
 **Expected Output**:
 ```
 Successfully deployed!
-Bundle deployed to: /Users/<username>/.bundle/valhalla_20260121/gcp
+Bundle deployed to: /Users/<username>/.bundle/valhalla/<target>
 ```
 
 ### 3. Verify Deployment
@@ -254,7 +259,7 @@ Check that resources were created:
 
 1. Open Databricks workspace
 2. Go to **Workflows** → **Jobs**
-3. Find `valhalla_test_gcp` (or `valhalla_test_azure`, `valhalla_test_aws`)
+3. Find `valhalla_test_<target>` (e.g., `valhalla_test_gcp`)
 4. Verify 3 tasks are configured:
    - `initial_setup`
    - `process_pbf`
@@ -262,21 +267,24 @@ Check that resources were created:
 
 ## Running the Test Job
 
-### Via CLI (Recommended)
+### Via CLI
 
 ```bash
 # Run the job
-databricks bundle run valhalla_test_job -t gcp
+databricks bundle run valhalla_test_job -t <target>
 
 # Follow logs in terminal
-databricks bundle run valhalla_test_job -t gcp --follow
+databricks bundle run valhalla_test_job -t <target> --follow
+
+# Example for GCP:
+# databricks bundle run valhalla_test_job -t gcp --follow
 ```
 
 ### Via UI
 
 1. Open Databricks workspace
 2. Go to **Workflows** → **Jobs**
-3. Find `valhalla_test_gcp`
+3. Find `valhalla_test_<target>` (e.g., `valhalla_test_gcp`)
 4. Click **Run now**
 5. Monitor progress in run details page
 
@@ -378,7 +386,7 @@ email_notifications:
 **Production Option**:
 - Use long-running interactive cluster
 - Set `existing_cluster_id` in job config
-- Faster startup, lower costs if running frequently
+- Faster startup if running frequently
 
 Example:
 ```yaml
@@ -419,8 +427,8 @@ variables:
 # Clear cached credentials
 rm -rf ~/.databrickscfg
 
-# Re-authenticate
-databricks auth login --profile gcp --host <workspace-url>
+# Re-authenticate with your cloud profile
+databricks auth login --profile <profile-name> --host <workspace-url>
 ```
 
 ### Bundle Validation Errors
@@ -502,41 +510,6 @@ new_cluster:
 - Check file count: `ls -R /Volumes/.../tiles/ | grep .gph | wc -l`
 - Ensure `valhalla.json` points to correct tile directory
 
-## Performance Optimization
-
-### Compilation Speed
-
-| Machine Type | vCPUs | Compilation Time |
-|-------------|-------|-----------------|
-| n2-highmem-16 | 16 | ~20-25 min |
-| n2-highmem-32 | 32 | ~10-15 min |
-| n2-highmem-64 | 64 | ~8-12 min |
-
-**Recommendation**: Use n2-highmem-32 for balance of cost and speed.
-
-### PBF Processing Speed
-
-Depends on region size:
-
-| Region | Size | Machine Type | Duration |
-|--------|------|-------------|----------|
-| Andorra | 3 MB | n2-highmem-32 | ~5 min |
-| Spain | 1.5 GB | n2-highmem-32 | ~30 min |
-| USA | 11 GB | n2-highmem-64 | ~90 min |
-| Planet | 70 GB | n2-highmem-128 | ~8 hours |
-
-### Cost Optimization
-
-**Development**:
-- Use smallest region (Andorra) for testing
-- Use job clusters (auto-terminate after run)
-- Run during off-peak hours
-
-**Production**:
-- Use interactive cluster for frequent runs
-- Schedule during low-cost periods
-- Consider preemptible/spot instances
-
 ## Next Steps
 
 After successful deployment:
@@ -555,7 +528,9 @@ After successful deployment:
 - [Valhalla Documentation](https://valhalla.github.io/valhalla/)
 - [Geofabrik Downloads](https://download.geofabrik.de/)
 
-## Support
+## Troubleshooting Resources
+
+**Note: This is a community project with no official support.**
 
 For deployment issues:
 - Check logs in Databricks job run output
@@ -563,6 +538,6 @@ For deployment issues:
 - Verify Unity Catalog permissions
 - Consult troubleshooting section above
 
-For Valhalla-specific questions:
+For Valhalla routing engine questions:
 - [Valhalla GitHub Issues](https://github.com/valhalla/valhalla/issues)
 - [Valhalla Discussions](https://github.com/valhalla/valhalla/discussions)

@@ -59,7 +59,8 @@ This notebook performs a one-time compilation of Valhalla from source, builds th
 
 - **Node Type**: Minimum 16 vCPUs, 128 GB RAM (e.g., n2-highmem-16)
 - **Workers**: 0 (single-node cluster)
-- **Runtime**: DBR 18.0.x-scala2.13 or higher
+- **Runtime**: DBR 17.3.x-scala2.13 (LTS) or 18.0.x-scala2.13
+- **Runtime Engine**: STANDARD or PHOTON
 - **Access Mode**: Single User
 
 ### Expected Duration
@@ -70,7 +71,7 @@ This notebook performs a one-time compilation of Valhalla from source, builds th
 | n2-highmem-32 | 32 | 10-15 min |
 | n2-highmem-64 | 64 | 8-12 min |
 
-**Recommendation**: Use n2-highmem-32 for optimal cost/speed balance.
+**Recommendation**: Use n2-highmem-32 for optimal performance.
 
 ### Output Artifacts
 
@@ -126,7 +127,7 @@ print("Init script preview:", init_script[:200])
 **Issue**: Compilation fails with GCC errors
 
 **Solution**:
-- Verify DBR 18.0.x or higher
+- Verify DBR 17.3.x or 18.0.x
 - Check machine has sufficient memory (128 GB minimum)
 - Review full error in notebook output
 
@@ -194,7 +195,8 @@ This notebook downloads OpenStreetMap data in PBF format, extracts it, builds ro
 
 - **Node Type**: Minimum 16 vCPUs, 128 GB RAM (e.g., n2-highmem-16)
 - **Workers**: 0 (single-node cluster)
-- **Runtime**: DBR 18.0.x-scala2.13 or higher
+- **Runtime**: DBR 17.3.x-scala2.13 (LTS) or 18.0.x-scala2.13
+- **Runtime Engine**: STANDARD or PHOTON
 - **Access Mode**: Single User
 - **Init Script**: Must use init script from `valhalla_00_initial_setup.py`
 
@@ -364,7 +366,8 @@ volume = 'valhalla_andorra'
 **Development Cluster** (for running quickstart):
 - **Node Type**: Any (e.g., n2-standard-4)
 - **Workers**: 1-2
-- **Runtime**: DBR 18.0.x-scala2.13 or higher
+- **Runtime**: DBR 17.3.x-scala2.13 (LTS) or 18.0.x-scala2.13
+- **Runtime Engine**: STANDARD or PHOTON
 
 **Note**: Setup and processing run on larger clusters automatically via `dbutils.notebook.run()`.
 

@@ -34,7 +34,7 @@ resources:
           
           # Large 32-core cluster for fastest compilation
           new_cluster:
-            spark_version: "18.0.x-scala2.13"
+            spark_version: "${var.spark_version}"
             node_type_id: "n2-highmem-32"  # GCP: 32 vCPUs, 256 GB RAM
             num_workers: 0  # Single node
             data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
@@ -45,7 +45,7 @@ resources:
             spark_conf:
               spark.master: "local[*]"
               spark.databricks.cluster.profile: "singleNode"
-            runtime_engine: "STANDARD"
+            runtime_engine: "${var.runtime_engine}"
           
           timeout_seconds: 3600  # 1 hour timeout (should complete in ~10-15 min)
           max_retries: 0  # Don't retry compilation failures - fail fast
@@ -64,7 +64,7 @@ resources:
           
           # Large cluster with init script for fast PBF processing
           new_cluster:
-            spark_version: "18.0.x-scala2.13"
+            spark_version: "${var.spark_version}"
             node_type_id: "n2-highmem-32"  # GCP: 32 vCPUs, 256 GB RAM
             num_workers: 0  # Single node
             data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
@@ -81,7 +81,7 @@ resources:
             spark_conf:
               spark.master: "local[*]"
               spark.databricks.cluster.profile: "singleNode"
-            runtime_engine: "STANDARD"
+            runtime_engine: "${var.runtime_engine}"
           
           timeout_seconds: 3600  # 1 hour timeout (Andorra should take ~5 min)
           max_retries: 1  # Retry once if fails
@@ -99,7 +99,7 @@ resources:
           
           # Multi-node cluster with init script for testing
           new_cluster:
-            spark_version: "18.0.x-scala2.13"
+            spark_version: "${var.spark_version}"
             node_type_id: "n2-standard-8"  # GCP: 8 vCPUs, 32 GB RAM
             num_workers: 2  # Multi-node to test distributed routing
             data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
@@ -111,7 +111,7 @@ resources:
               - volumes:
                   destination: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}/init.sh"
             
-            runtime_engine: "STANDARD"
+            runtime_engine: "${var.runtime_engine}"
           
           timeout_seconds: 1800  # 30 minute timeout
           max_retries: 1

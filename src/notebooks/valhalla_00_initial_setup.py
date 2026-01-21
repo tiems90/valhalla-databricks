@@ -1,18 +1,24 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Valhalla Build & Cache Script (DBR 18.0 Compatible)
+# MAGIC # Valhalla Build & Cache Script (Multi-Runtime Compatible)
 # MAGIC
 # MAGIC This notebook builds the Valhalla routing engine with Python bindings in a Databricks environment. 
 # MAGIC It installs all dependencies, compiles the code, and caches the resulting binaries and wheel file to persistent storage. 
 # MAGIC It also generates an init script for restoring these binaries on future cluster startups.
 # MAGIC
 # MAGIC **Tested with:**
-# MAGIC - **Databricks Runtime 18.0.x-scala2.13** (GCP)
+# MAGIC - **DBR 18.0.x-scala2.13** (standard & Photon) ✅
+# MAGIC - **DBR 17.3.x-scala2.13** (LTS, standard & Photon) ✅
 # MAGIC - **Single-node cluster** (n2-highmem-16 or larger recommended)
 # MAGIC - **Dedicated access mode** (no isolation shared)
 # MAGIC
-# MAGIC **Key Changes for DBR 18.0:**
-# MAGIC - Added compiler flags to handle GCC 11+ format-truncation warnings
+# MAGIC **Runtime Configuration:**
+# MAGIC - **Standard**: `spark_version: "18.0.x-scala2.13"` + `runtime_engine: "STANDARD"`
+# MAGIC - **Photon**: `spark_version: "18.0.x-scala2.13"` + `runtime_engine: "PHOTON"`
+# MAGIC - Note: Photon is configured via `runtime_engine` parameter, not in the version string
+# MAGIC
+# MAGIC **Key Compiler Flags (GCC 11+):**
+# MAGIC - Added `-Wno-error=format-truncation` to handle GCC 11+ warnings
 # MAGIC - Explicit build directory cleanup for reproducible builds
 # MAGIC - Build environment verification steps
 # MAGIC

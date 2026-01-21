@@ -7,7 +7,8 @@ This directory contains Databricks notebooks for installing, configuring, and us
 ## 🎯 Quick Start
 
 **Recommended cluster configuration:**
-- **Runtime**: `18.0.x-scala2.13` (GCP)
+- **Runtime**: `18.0.x-scala2.13` or `17.3.x-scala2.13` (LTS)
+- **Runtime Engine**: `STANDARD` (or `PHOTON` for acceleration)
 - **Machine Type**: `n2-highmem-16` or larger (16+ vCPUs, 128+ GB RAM)
 - **Workers**: 0 (single node for compilation, scale out for routing)
 - **Access Mode**: No isolation shared (dedicated)
@@ -147,9 +148,14 @@ volume = 'valhalla_andorra'
 ### Verified Runtimes
 
 These notebooks are tested and verified on:
-- `18.0.x-scala2.13` ✅
-- `18.0.x-photon-scala2.13` ✅
-- `18.0.x-cpu-ml-scala2.13` ✅
+- `18.0.x-scala2.13` (standard) ✅
+- `18.0.x-scala2.13` with Photon (`runtime_engine: PHOTON`) ✅
+- `18.0.x-cpu-ml-scala2.13` (ML runtime) ✅
+- `17.3.x-scala2.13` with Photon (`runtime_engine: PHOTON`) ✅
+
+**Note on Photon**: When using Photon, specify it via the `runtime_engine` parameter, not in the spark_version string. For example:
+- ❌ Wrong: `spark_version: "18.0.x-photon-scala2.13"`
+- ✅ Correct: `spark_version: "18.0.x-scala2.13"` + `runtime_engine: "PHOTON"`
 
 ---
 
@@ -170,6 +176,7 @@ cluster = w.clusters.create(
     num_workers=0,  # Single node for setup
     autotermination_minutes=120,
     data_security_mode=DataSecurityMode.NONE,
+    runtime_engine="STANDARD",  # Or "PHOTON" for Photon acceleration
     spark_conf={
         "spark.master": "local[*]",
         "spark.databricks.cluster.profile": "singleNode"
@@ -274,32 +281,6 @@ c++: fatal error: Killed signal terminated program
 
 ---
 
-## 📊 Performance Tuning
-
-### Compilation Speed
-- **Single-core**: 60-90 minutes
-- **n2-highmem-16 (16 cores)**: 15-30 minutes
-- **n2-highmem-32 (32 cores)**: 10-20 minutes
-
-### PBF Processing Speed
-Depends on:
-- PBF file size
-- Number of OSM elements
-- Disk I/O speed
-
-### Routing Throughput
-- **Single thread**: ~50-100 routes/second
-- **4-core cluster**: ~200-400 routes/second
-- **32-core cluster**: ~1500-3000 routes/second
-
-**Optimization tips:**
-1. Increase partitions: `repartition(cores * 2)`
-2. Batch routes in each partition
-3. Use larger machines for workers
-4. Cache tile data on local SSDs
-
----
-
 ## 🔗 Additional Resources
 
 - [Valhalla Documentation](https://valhalla.github.io/valhalla/)
@@ -324,4 +305,6 @@ Use Python routing libraries like `osmnx`, `openrouteservice`, or `routingpy` wi
 
 ## 📄 License
 
-These notebooks are provided as examples. Valhalla is licensed under MIT License.
+This project is licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+These notebooks are provided as examples. Valhalla itself is also licensed under the MIT License.

@@ -1,11 +1,12 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Valhalla Quickstart: Routing on Databricks (DBR 18.0)
+# MAGIC # Valhalla Quickstart: Routing on Databricks
 # MAGIC
 # MAGIC This notebook serves as a **single-node Valhalla quickstart** for routing based on OpenStreetMap `.pbf` data.
 # MAGIC
 # MAGIC **Tested with:**
-# MAGIC - **Databricks Runtime 18.0.x-scala2.13** (GCP)
+# MAGIC - **DBR 18.0.x-scala2.13** (standard & Photon) ✅
+# MAGIC - **DBR 17.3.x-scala2.13** (LTS, standard & Photon) ✅
 # MAGIC - **Single-node cluster** (n2-highmem-16 or larger recommended)
 # MAGIC - **Dedicated access mode** (no isolation shared)
 # MAGIC

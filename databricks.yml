@@ -2,7 +2,7 @@
 # See https://docs.databricks.com/dev-tools/bundles/index.html
 
 bundle:
-  name: valhalla_20260121
+  name: valhalla
 
 # Include job and pipeline definitions
 include:
@@ -44,6 +44,14 @@ variables:
   valhalla_pbf_url:
     description: "OSM PBF URL for testing"
     default: "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
+  
+  spark_version:
+    description: "Databricks Runtime version for all tasks"
+    default: "18.0.x-scala2.13"
+  
+  runtime_engine:
+    description: "Runtime engine: STANDARD or PHOTON"
+    default: "STANDARD"
 
 # Multi-cloud targets
 # All targets use mode: development to enable --cluster-id flag for running jobs
@@ -56,10 +64,9 @@ variables:
 #
 # See DEPLOYMENT.md for detailed authentication setup instructions
 targets:
-  # GCP target (default)
+  # GCP target
   # Configure with: databricks auth login --profile gcp --host <your-gcp-workspace-url>
   gcp:
-    default: true
     mode: development
     workspace:
       profile: gcp

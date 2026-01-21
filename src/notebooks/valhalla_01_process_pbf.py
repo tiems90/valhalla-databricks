@@ -1,12 +1,13 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Process OSM PBF with Valhalla (DBR 18.0 Compatible)
+# MAGIC # Process OSM PBF with Valhalla (Multi-Runtime Compatible)
 # MAGIC
 # MAGIC This notebook downloads and processes an OpenStreetMap `.pbf` extract using Valhalla build tools. 
 # MAGIC It creates routing tiles, timezones, and administrative boundaries, and stores them in the specified volume path.
 # MAGIC
 # MAGIC **Tested with:**
-# MAGIC - **Databricks Runtime 18.0.x-scala2.13** (GCP)
+# MAGIC - **DBR 18.0.x-scala2.13** (standard & Photon) ✅
+# MAGIC - **DBR 17.3.x-scala2.13** (LTS, standard & Photon) ✅
 # MAGIC - **Single-node cluster** (n2-highmem-16 or larger recommended)
 # MAGIC - **Dedicated access mode** (no isolation shared)
 # MAGIC
