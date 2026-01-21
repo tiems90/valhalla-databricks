@@ -29,7 +29,7 @@ This notebook performs a one-time compilation of Valhalla from source, builds th
 
 | Parameter | Description | Example | Required |
 |-----------|-------------|---------|----------|
-| `VOLUME_PATH` | Unity Catalog volume for artifacts | `/Volumes/main/default/valhalla_region` | Yes |
+| `VOLUME_PATH` | Unity Catalog volume for artifacts | `/Volumes/your_catalog/your_schema/valhalla_region` | Yes |
 
 ### What It Does
 
@@ -76,10 +76,17 @@ This notebook performs a one-time compilation of Valhalla from source, builds th
 
 ```
 /Volumes/your_catalog/your_schema/valhalla_region/
-├── bin/              # Valhalla binaries (valhalla_service, valhalla_build_tiles, etc.)
-├── lib/              # Shared libraries
-├── whl/              # Python wheel file (pyvalhalla-*.whl)
+├── bin/              # Valhalla binaries AND shared libraries
+│   ├── libprime_server.* (shared libraries)
+│   ├── libvalhalla.a
+│   ├── valhalla_service
+│   ├── valhalla_build_tiles
+│   └── ... (other Valhalla executables)
+├── whl/              # Python wheel file
+│   └── pyvalhalla-*.whl
 └── init.sh           # Cluster initialization script
+
+Note: After running valhalla_01_process_pbf.py, a tiles/ directory will be created containing routing tile data.
 ```
 
 ### Verification
@@ -89,14 +96,20 @@ Check that artifacts were created:
 ```python
 volume_path = "/Volumes/your_catalog/your_schema/valhalla_region"
 
-# List binaries
-display(dbutils.fs.ls(f"{volume_path}/bin"))
+# List all volume contents
+display(dbutils.fs.ls(volume_path))
 
-# List wheel
-display(dbutils.fs.ls(f"{volume_path}/whl"))
+# Check binaries exist
+binaries = dbutils.fs.ls(f"{volume_path}/bin")
+print(f"Found {len(binaries)} files in bin/")
 
-# Check init script exists
-display(dbutils.fs.ls(f"{volume_path}/init.sh"))
+# Check wheel exists
+wheels = dbutils.fs.ls(f"{volume_path}/whl")
+print(f"Python wheel: {wheels[0].name}")
+
+# Verify init script
+init_script = dbutils.fs.head(f"{volume_path}/init.sh", 500)
+print("Init script preview:", init_script[:200])
 ```
 
 ### DBR 18.0 Compatibility
@@ -149,8 +162,8 @@ This notebook downloads OpenStreetMap data in PBF format, extracts it, builds ro
 
 | Parameter | Description | Example | Required |
 |-----------|-------------|---------|----------|
-| `VOLUME_PATH` | Unity Catalog volume (must match setup) | `/Volumes/main/default/valhalla_spain` | Yes |
-| `PBF_URL` | OSM PBF file URL | `https://download.geofabrik.de/europe/spain-latest.osm.pbf` | Yes |
+| `VOLUME_PATH` | Unity Catalog volume (must match setup) | `/Volumes/your_catalog/your_schema/valhalla_region` | Yes |
+| `PBF_URL` | OSM PBF file URL | `https://download.geofabrik.de/europe/andorra-latest.osm.pbf` | Yes |
 
 ### What It Does
 
@@ -203,14 +216,20 @@ Duration depends on region size:
 
 ```
 /Volumes/your_catalog/your_schema/valhalla_region/
-├── tiles/                 # Routing tiles
-│   ├── 0/                # Level 0 tiles (lowest detail)
+├── tiles/                    # Routing tiles (created by this notebook)
+│   ├── 0/                   # Level 0 tiles (lowest detail)
 │   │   └── *.gph
-│   ├── 1/                # Level 1 tiles
+│   ├── 1/                   # Level 1 tiles
 │   │   └── *.gph
-│   └── 2/                # Level 2 tiles (highest detail)
-│       └── *.gph
-└── valhalla.json         # Valhalla configuration
+│   ├── 2/                   # Level 2 tiles (highest detail)
+│   │   └── *.gph
+│   ├── admins.sqlite        # Administrative boundaries
+│   ├── timezones.sqlite     # Timezone data
+│   ├── tiles.tar            # Archived tiles (optional)
+│   └── valhalla.json        # Valhalla configuration
+├── bin/                     # Valhalla binaries (from valhalla_00_initial_setup.py)
+├── whl/                     # Python wheel (from valhalla_00_initial_setup.py)
+└── init.sh                  # Init script (from valhalla_00_initial_setup.py)
 ```
 
 ### Verification
@@ -220,12 +239,16 @@ Check that tiles were created:
 ```python
 volume_path = "/Volumes/your_catalog/your_schema/valhalla_region"
 
-# Count tiles
-tile_count = len([f for f in dbutils.fs.ls(f"{volume_path}/tiles/") if f.name.endswith('.gph')])
-print(f"Created {tile_count} tiles")
+# List tiles directory
+display(dbutils.fs.ls(f"{volume_path}/tiles"))
 
-# Check config
-display(spark.read.text(f"{volume_path}/valhalla.json"))
+# Check tile levels exist
+for level in [0, 1, 2]:
+    tiles = dbutils.fs.ls(f"{volume_path}/tiles/{level}")
+    print(f"Level {level}: {len(tiles)} tiles")
+
+# Check config exists
+display(dbutils.fs.ls(f"{volume_path}/tiles/valhalla.json"))
 ```
 
 ### PBF Data Sources
@@ -415,7 +438,7 @@ This notebook runs comprehensive tests to ensure Valhalla is correctly installed
 
 | Parameter | Description | Example | Required |
 |-----------|-------------|---------|----------|
-| `VOLUME_PATH` | Unity Catalog volume with tiles | `/Volumes/main/default/valhalla_region` | Yes |
+| `VOLUME_PATH` | Unity Catalog volume with tiles | `/Volumes/your_catalog/your_schema/valhalla_region` | Yes |
 
 ### Test Suite
 
@@ -625,7 +648,7 @@ df.withColumn("route", route_udf("origin", "destination"))
 ```python
 # MAGIC Example:
 # MAGIC ```python
-# MAGIC volume_path = "/Volumes/main/default/valhalla_andorra"
+# MAGIC volume_path = "/Volumes/your_catalog/your_schema/valhalla_region"
 # MAGIC ```
 ```
 

@@ -66,7 +66,7 @@ variables:
     default: "default"  # Change to your schema
   
   valhalla_volume:
-    default: "valhalla_andorra"  # Volume name for this region
+    default: "valhalla_region"  # Volume name for this region
   
   valhalla_pbf_url:
     default: "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
