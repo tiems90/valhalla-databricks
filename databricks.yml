@@ -1,0 +1,89 @@
+# Databricks Asset Bundle configuration
+# See https://docs.databricks.com/dev-tools/bundles/index.html
+
+bundle:
+  name: valhalla_20260121
+
+# Include job and pipeline definitions
+include:
+  - resources/valhalla_test_job.yml
+
+# Sync notebooks and source code
+sync:
+  include:
+    - src/notebooks/**/*.py
+
+# Artifact configuration for wheel builds (optional)
+# artifacts:
+#   default:
+#     type: whl
+#     build: uv build
+#     path: .
+
+# Variables for development compute
+# Use @compute-setup agent to configure these automatically
+variables:
+  dev_cluster_id:
+    description: "Interactive cluster ID for development (set by @compute-setup agent)"
+    default: ""
+  
+  # Valhalla configuration
+  # Update these values to match your Unity Catalog structure
+  valhalla_catalog:
+    description: "Unity Catalog catalog for Valhalla artifacts"
+    default: "your_catalog"
+  
+  valhalla_schema:
+    description: "Unity Catalog schema for Valhalla artifacts"
+    default: "your_schema"
+  
+  valhalla_volume:
+    description: "Unity Catalog volume for Valhalla artifacts (will store compiled binaries, wheels, tiles)"
+    default: "valhalla_region"
+  
+  valhalla_pbf_url:
+    description: "OSM PBF URL for testing"
+    default: "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
+
+# Multi-cloud targets
+# All targets use mode: development to enable --cluster-id flag for running jobs
+# on interactive clusters (faster iteration, no cluster spin-up time)
+#
+# Configure authentication for each cloud provider:
+# - GCP: Run `databricks auth login --profile gcp --host <workspace-url>`
+# - Azure: Run `databricks auth login --profile azure --host <workspace-url>`  
+# - AWS: Run `databricks auth login --profile aws --host <workspace-url>`
+#
+# See DEPLOYMENT.md for detailed authentication setup instructions
+targets:
+  # GCP target (default)
+  # Configure with: databricks auth login --profile gcp --host <your-gcp-workspace-url>
+  gcp:
+    default: true
+    mode: development
+    workspace:
+      profile: gcp
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      dev_cluster_id: ""  # Optional: Set to use specific interactive cluster
+
+  # Azure target
+  # Configure with: databricks auth login --profile azure --host <your-azure-workspace-url>
+  azure:
+    mode: development
+    workspace:
+      profile: azure
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      dev_cluster_id: ""  # Optional: Set to use specific interactive cluster
+
+  # AWS target
+  # Configure with: databricks auth login --profile aws --host <your-aws-workspace-url>
+  aws:
+    mode: development
+    workspace:
+      profile: aws
+      root_path: /Users/${workspace.current_user.userName}/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      dev_cluster_id: ""  # Optional: Set to use specific interactive cluster
+

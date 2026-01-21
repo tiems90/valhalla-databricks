@@ -1,0 +1,132 @@
+# Valhalla End-to-End Test Job
+# 
+# This job tests the complete Valhalla installation workflow:
+# 1. Compile Valhalla and create init script (single large node)
+# 2. Process OSM PBF file into routing tiles (single large node)  
+# 3. Test routing functionality (multi-node cluster)
+#
+# MULTI-CLOUD MACHINE TYPES:
+# - GCP: n2-highmem-32 (compilation), n2-standard-8 (testing)
+# - AWS: r5.8xlarge (compilation), m5.2xlarge (testing)
+# - Azure: Standard_E32s_v3 (compilation), Standard_D8s_v3 (testing)
+#
+# Update node_type_id below based on your cloud provider.
+# See DEPLOYMENT.md for detailed cloud-specific configurations.
+
+resources:
+  jobs:
+    valhalla_test_job:
+      name: "valhalla_test_${bundle.target}"
+      
+      tags:
+        project: "valhalla"
+        environment: "${bundle.target}"
+        test: "automated"
+      
+      tasks:
+        # Task 1: Compile Valhalla and create init script
+        # This runs on a single large node for fast compilation
+        - task_key: initial_setup
+          notebook_task:
+            notebook_path: ../src/notebooks/valhalla_00_initial_setup.py
+            base_parameters:
+              VOLUME_PATH: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}"
+          
+          # Large 32-core cluster for fastest compilation
+          new_cluster:
+            spark_version: "18.0.x-scala2.13"
+            node_type_id: "n2-highmem-32"  # GCP: 32 vCPUs, 256 GB RAM
+            num_workers: 0  # Single node
+            data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
+            custom_tags:
+              usage: "valhalla-compilation"
+              cores: "32"
+              ResourceClass: "SingleNode"
+            spark_conf:
+              spark.master: "local[*]"
+              spark.databricks.cluster.profile: "singleNode"
+            runtime_engine: "STANDARD"
+          
+          timeout_seconds: 3600  # 1 hour timeout (should complete in ~10-15 min)
+          max_retries: 0  # Don't retry compilation failures - fail fast
+        
+        # Task 2: Process PBF file into routing tiles
+        # Uses the init script generated in Task 1
+        - task_key: process_pbf
+          depends_on:
+            - task_key: initial_setup
+          
+          notebook_task:
+            notebook_path: ../src/notebooks/valhalla_01_process_pbf.py
+            base_parameters:
+              VOLUME_PATH: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}"
+              PBF_URL: "${var.valhalla_pbf_url}"
+          
+          # Large cluster with init script for fast PBF processing
+          new_cluster:
+            spark_version: "18.0.x-scala2.13"
+            node_type_id: "n2-highmem-32"  # GCP: 32 vCPUs, 256 GB RAM
+            num_workers: 0  # Single node
+            data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
+            custom_tags:
+              usage: "valhalla-pbf-processing"
+              cores: "32"
+              ResourceClass: "SingleNode"
+            
+            # Apply the init script from task 1
+            init_scripts:
+              - volumes:
+                  destination: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}/init.sh"
+            
+            spark_conf:
+              spark.master: "local[*]"
+              spark.databricks.cluster.profile: "singleNode"
+            runtime_engine: "STANDARD"
+          
+          timeout_seconds: 3600  # 1 hour timeout (Andorra should take ~5 min)
+          max_retries: 1  # Retry once if fails
+        
+        # Task 3: Test routing functionality
+        # Multi-node cluster to test distributed routing
+        - task_key: test_routing
+          depends_on:
+            - task_key: process_pbf
+          
+          notebook_task:
+            notebook_path: ../src/notebooks/valhalla_test_routing.py
+            base_parameters:
+              VOLUME_PATH: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}"
+          
+          # Multi-node cluster with init script for testing
+          new_cluster:
+            spark_version: "18.0.x-scala2.13"
+            node_type_id: "n2-standard-8"  # GCP: 8 vCPUs, 32 GB RAM
+            num_workers: 2  # Multi-node to test distributed routing
+            data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
+            custom_tags:
+              usage: "valhalla-testing"
+            
+            # Apply the init script
+            init_scripts:
+              - volumes:
+                  destination: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}/init.sh"
+            
+            runtime_engine: "STANDARD"
+          
+          timeout_seconds: 1800  # 30 minute timeout
+          max_retries: 1
+      
+      # Email notifications on success/failure
+      email_notifications:
+        on_success:
+          - ${workspace.current_user.userName}
+        on_failure:
+          - ${workspace.current_user.userName}
+      
+      # Run immediately when triggered
+      max_concurrent_runs: 1
+      
+      # Optional: Schedule for nightly testing
+      # schedule:
+      #   quartz_cron_expression: "0 0 2 * * ?"  # 2 AM daily
+      #   timezone_id: "UTC"
