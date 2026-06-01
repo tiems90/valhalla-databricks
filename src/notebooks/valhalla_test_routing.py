@@ -29,6 +29,21 @@ catalog, schema, volume = parse_volume_path(volume_path)
 
 config_path = f"{volume_path}/tiles/valhalla.json"
 
+# Region-specific test coordinates — keyed on volume name fragment
+_ROUTING_REGIONS = {
+    "france":     {"route": [(48.8566, 2.3522, "Paris"),   (45.7640, 4.8357, "Lyon")],
+                   "bbox": (42.3, 51.1, -4.8, 8.2)},
+    "luxembourg": {"route": [(49.6117, 6.1319, "Luxembourg City"), (49.4953, 5.9806, "Esch-sur-Alzette")],
+                   "bbox": (49.44, 50.18, 5.73, 6.53)},
+    "andorra":    {"route": [(42.5063, 1.5218, "Andorra la Vella"), (42.5562, 1.5336, "Ordino")],
+                   "bbox": (42.43, 42.66, 1.41, 1.79)},
+}
+_rk = next((k for k in _ROUTING_REGIONS if k in volume.lower()), None)
+if _rk is None:
+    raise ValueError(f"No test coordinates configured for volume '{volume}'. Add an entry to _ROUTING_REGIONS.")
+_region = _ROUTING_REGIONS[_rk]
+print(f"📍 Test region: {_rk}")
+
 print(f"🧪 Valhalla Test Suite")
 print(f"=" * 80)
 print(f"Volume: {volume_path}")
@@ -122,11 +137,12 @@ except Exception as e:
 print("Test 4: Single Route Query")
 print("-" * 80)
 
-# Test coordinates for France
+lat1, lon1, city1 = _region["route"][0]
+lat2, lon2, city2 = _region["route"][1]
 query = {
     "locations": [
-        {"lat": 48.8566, "lon": 2.3522, "type": "break", "city": "Paris"},
-        {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"}
+        {"lat": lat1, "lon": lon1, "type": "break", "city": city1},
+        {"lat": lat2, "lon": lon2, "type": "break", "city": city2},
     ],
     "costing": "auto",
     "directions_options": {"units": "kilometers"}
@@ -189,15 +205,16 @@ from typing import Iterator
 import pandas as pd
 import valhalla
 
-# Create small test dataset (20 random OD pairs across France mainland)
+# Create small test dataset (20 random OD pairs within the region bounding box)
+_lat_min, _lat_max, _lon_min, _lon_max = _region["bbox"]
 test_data = []
 import random
 for i in range(20):
     test_data.append((
-        42.3 + random.random() * (51.1 - 42.3),
-        -4.8 + random.random() * (8.2 - (-4.8)),
-        42.3 + random.random() * (51.1 - 42.3),
-        -4.8 + random.random() * (8.2 - (-4.8))
+        _lat_min + random.random() * (_lat_max - _lat_min),
+        _lon_min + random.random() * (_lon_max - _lon_min),
+        _lat_min + random.random() * (_lat_max - _lat_min),
+        _lon_min + random.random() * (_lon_max - _lon_min),
     ))
 
 test_df = spark.createDataFrame(test_data, ["orig_lat", "orig_lon", "dest_lat", "dest_lon"]).repartition(4)
