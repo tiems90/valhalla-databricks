@@ -303,27 +303,66 @@ CITIES = [
     ("Grenoble",   45.1885,  5.7245),
 ]
 
-def simulate_trip(city_name, lat, lon, n_points=8, noise_m=12):
-    """Simulate a short urban GPS trace starting near a city centre."""
+def _bearing(lat1, lon1, lat2, lon2):
+    """Compass bearing (0–360°) from point 1 to point 2."""
+    dlon = math.radians(lon2 - lon1)
+    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
+    x = math.sin(dlon) * math.cos(lat2_r)
+    y = math.cos(lat1_r) * math.sin(lat2_r) - math.sin(lat1_r) * math.cos(lat2_r) * math.cos(dlon)
+    return round((math.degrees(math.atan2(x, y)) + 360) % 360, 1)
+
+def simulate_trip(city_name, lat, lon, n_points=8, base_noise_m=12, start_time=1_700_000_000):
+    """
+    Simulate a short urban GPS trace with per-point metadata:
+      - time       : Unix timestamp (~5s between points, ~60-90m steps → ~50-65 km/h urban speed)
+      - accuracy   : GPS accuracy in metres (varies to simulate signal quality)
+      - heading    : compass bearing to next point (helps Valhalla disambiguate parallel roads)
+
+    These fields are passed straight through to Valhalla's per-point shape API.
+    For real fleet data, substitute actual HDOP-derived accuracy and device heading.
+
+    IMPORTANT — timestamps and distance must be speed-consistent. Valhalla's HMM uses
+    timestamps to compute transition probabilities: if implied speed between two points
+    exceeds what's plausible for the costing mode, the match will fail. Always verify
+    that (distance / time_delta) falls within a realistic range for your costing.
+    """
     rng = random.Random(hash(city_name))
-    points = []
+    true_points = []
     cur_lat, cur_lon = lat, lon
     for _ in range(n_points):
-        # Small random step (~100m)
         cur_lat += rng.gauss(0, 0.0004)
         cur_lon += rng.gauss(0, 0.0006)
-        # GPS noise
-        noisy_lat = cur_lat + rng.gauss(0, noise_m / 111_000)
-        noisy_lon = cur_lon + rng.gauss(0, noise_m / (111_000 * math.cos(math.radians(cur_lat))))
-        points.append((round(noisy_lat, 6), round(noisy_lon, 6)))
+        true_points.append((cur_lat, cur_lon))
+
+    points = []
+    for i, (true_lat, true_lon) in enumerate(true_points):
+        # Vary accuracy: simulate occasional poor signal (urban canyon, etc.)
+        point_accuracy = round(base_noise_m * rng.uniform(0.5, 2.5), 1)
+        noise_m = point_accuracy
+        noisy_lat = true_lat + rng.gauss(0, noise_m / 111_000)
+        noisy_lon = true_lon + rng.gauss(0, noise_m / (111_000 * math.cos(math.radians(true_lat))))
+
+        # Heading toward next true point (undefined for last point — omit)
+        point = {
+            "lat":      round(noisy_lat, 6),
+            "lon":      round(noisy_lon, 6),
+            "time":     start_time + i * 5,
+            "accuracy": point_accuracy,
+        }
+        if i < len(true_points) - 1:
+            next_lat, next_lon = true_points[i + 1]
+            point["heading"] = _bearing(true_lat, true_lon, next_lat, next_lon)
+            point["heading_tolerance"] = 45
+
+        points.append(point)
     return points
 
 traces = []
 for city, lat, lon in CITIES:
     for trip_id in range(10):  # 10 trips per city = 100 trips total
         points = simulate_trip(city, lat, lon)
-        # Store as JSON string for Spark serialisation
-        shape_json = json.dumps([{"lat": p[0], "lon": p[1]} for p in points])
+        # shape_json preserves all per-point fields (time, accuracy, heading, etc.)
+        shape_json = json.dumps(points)
         traces.append((f"{city}_{trip_id:02d}", city, shape_json))
 
 trips_df = spark.createDataFrame(traces, ["trip_id", "city", "shape_json"]).repartition(20)
