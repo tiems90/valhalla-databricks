@@ -231,20 +231,24 @@ config_path = f"{tile_dir}/valhalla.json"
 print(f"📁 Tile directory contents:")
 print("=" * 80)
 
-# List files
-for root, dirs, files in os.walk(tile_dir):
-    level = root.replace(tile_dir, '').count(os.sep)
-    indent = ' ' * 2 * level
-    print(f'{indent}{os.path.basename(root)}/')
-    subindent = ' ' * 2 * (level + 1)
-    for file in sorted(files)[:10]:  # Limit to first 10 files per directory
-        file_path = os.path.join(root, file)
-        size = os.path.getsize(file_path)
-        size_mb = size / (1024 * 1024)
-        print(f'{subindent}{file} ({size_mb:.2f} MB)')
-    if len(files) > 10:
-        print(f'{subindent}... and {len(files) - 10} more files')
-    break  # Only show top level
+# Show top-level directory contents
+print(f"Top-level contents of {tile_dir}:")
+for name in sorted(os.listdir(tile_dir))[:20]:
+    full_path = os.path.join(tile_dir, name)
+    if os.path.isfile(full_path):
+        size_mb = os.path.getsize(full_path) / (1024 * 1024)
+        print(f"  {name} ({size_mb:.2f} MB)")
+    else:
+        print(f"  {name}/")
+
+# Count all .gph tile files across all subdirectories
+tile_count = sum(
+    1 for _, _, files in os.walk(tile_dir)
+    for f in files if f.endswith(".gph")
+)
+print(f"\n✅ Total .gph tile files: {tile_count}")
+if tile_count == 0:
+    print("⚠️  No .gph tiles found — tile build may not have completed")
 
 print("=" * 80)
 

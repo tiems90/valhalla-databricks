@@ -272,7 +272,11 @@ print("Test 7: Verify Init Script on Workers")
 print("-" * 80)
 
 def check_valhalla_on_worker(iterator):
-    """Check if Valhalla is available on worker"""
+    """Check if Valhalla is available on worker.
+
+    Note: spark.range(sc.defaultParallelism) creates exactly one row per partition,
+    so this yields exactly one result row per executor — intentional.
+    """
     import os
     import pandas as pd
     
