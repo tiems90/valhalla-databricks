@@ -24,6 +24,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./valhalla_utils
+
+# COMMAND ----------
+
 # DBTITLE 1,Parameters
 import os
 
