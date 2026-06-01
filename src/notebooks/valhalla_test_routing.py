@@ -13,63 +13,36 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./valhalla_utils
+
+# COMMAND ----------
+
 # DBTITLE 1,Setup and Configuration
 import json
 import sys
-import re
 from pathlib import Path
 
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Volume Path")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
 
-# Validate volume path format and identifiers
-volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
-match = re.match(volume_pattern, volume_path)
-
-if match:
-    catalog, schema, volume = match.groups()
-    
-    # Unity Catalog identifier rules (non-delimited/unquoted identifiers):
-    # - Must start with letter (A-Z, a-z) or underscore (_)
-    # - Can contain letters, digits (0-9), and underscores
-    # - Maximum 255 characters
-    # Reference: https://docs.databricks.com/sql/language-manual/sql-ref-identifiers.html
-    def validate_identifier(name, identifier_type="identifier"):
-        """
-        Validate Unity Catalog identifier for security.
-        
-        Only allows non-delimited identifiers (no backticks) to prevent SQL injection.
-        Follows Databricks naming rules for catalogs, schemas, and volumes.
-        """
-        if not name:
-            raise ValueError(f"{identifier_type} cannot be empty")
-        
-        if len(name) > 255:
-            raise ValueError(f"{identifier_type} too long: {len(name)} chars (max 255)")
-        
-        # Must start with letter or underscore
-        if not re.match(r'^[a-zA-Z_]', name):
-            raise ValueError(
-                f"Invalid {identifier_type}: '{name}'. "
-                f"Must start with a letter (A-Z, a-z) or underscore (_)."
-            )
-        
-        # Can only contain letters, digits, and underscores
-        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-            raise ValueError(
-                f"Invalid {identifier_type}: '{name}'. "
-                f"Can only contain letters, digits, and underscores. "
-                f"Hyphens and special characters require backtick escaping (not supported for security)."
-            )
-        
-        return name
-    
-    # Validate identifiers
-    validate_identifier(catalog, "catalog name")
-    validate_identifier(schema, "schema name")
-    validate_identifier(volume, "volume name")
+catalog, schema, volume = parse_volume_path(volume_path)
 
 config_path = f"{volume_path}/tiles/valhalla.json"
+
+# Region-specific test coordinates — keyed on volume name fragment
+_ROUTING_REGIONS = {
+    "france":     {"route": [(48.8566, 2.3522, "Paris"),   (45.7640, 4.8357, "Lyon")],
+                   "bbox": (42.3, 51.1, -4.8, 8.2)},
+    "luxembourg": {"route": [(49.6117, 6.1319, "Luxembourg City"), (49.4953, 5.9806, "Esch-sur-Alzette")],
+                   "bbox": (49.44, 50.18, 5.73, 6.53)},
+    "andorra":    {"route": [(42.5063, 1.5218, "Andorra la Vella"), (42.5562, 1.5336, "Ordino")],
+                   "bbox": (42.43, 42.66, 1.41, 1.79)},
+}
+_rk = next((k for k in _ROUTING_REGIONS if k in volume.lower()), None)
+if _rk is None:
+    raise ValueError(f"No test coordinates configured for volume '{volume}'. Add an entry to _ROUTING_REGIONS.")
+_region = _ROUTING_REGIONS[_rk]
+print(f"📍 Test region: {_rk}")
 
 print(f"🧪 Valhalla Test Suite")
 print(f"=" * 80)
@@ -164,11 +137,12 @@ except Exception as e:
 print("Test 4: Single Route Query")
 print("-" * 80)
 
-# Test coordinates for Andorra
+lat1, lon1, city1 = _region["route"][0]
+lat2, lon2, city2 = _region["route"][1]
 query = {
     "locations": [
-        {"lat": 42.5078, "lon": 1.5211, "type": "break", "city": "Andorra la Vella"},
-        {"lat": 42.5562, "lon": 1.5336, "type": "break", "city": "Ordino"}
+        {"lat": lat1, "lon": lon1, "type": "break", "city": city1},
+        {"lat": lat2, "lon": lon2, "type": "break", "city": city2},
     ],
     "costing": "auto",
     "directions_options": {"units": "kilometers"}
@@ -210,9 +184,9 @@ else:
             result = actor.route(query)
             if "trip" in result:
                 success_count += 1
-        except:
+        except Exception:
             pass
-    
+
     elapsed = time.time() - start_time
     throughput = num_tests / elapsed if elapsed > 0 else 0
     
@@ -231,15 +205,16 @@ from typing import Iterator
 import pandas as pd
 import valhalla
 
-# Create small test dataset (20 random OD pairs in Andorra bounds)
+# Create small test dataset (20 random OD pairs within the region bounding box)
+_lat_min, _lat_max, _lon_min, _lon_max = _region["bbox"]
 test_data = []
 import random
 for i in range(20):
     test_data.append((
-        42.428 + random.random() * (42.655 - 42.428),
-        1.413 + random.random() * (1.786 - 1.413),
-        42.428 + random.random() * (42.655 - 42.428),
-        1.413 + random.random() * (1.786 - 1.413)
+        _lat_min + random.random() * (_lat_max - _lat_min),
+        _lon_min + random.random() * (_lon_max - _lon_min),
+        _lat_min + random.random() * (_lat_max - _lat_min),
+        _lon_min + random.random() * (_lon_max - _lon_min),
     ))
 
 test_df = spark.createDataFrame(test_data, ["orig_lat", "orig_lon", "dest_lat", "dest_lon"]).repartition(4)
@@ -269,7 +244,7 @@ def route_batch(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
                     "distance_km": summary["length"],
                     "time_min": summary["time"] / 60
                 })
-            except:
+            except Exception as e:
                 results.append({
                     "orig_lat": row.orig_lat,
                     "orig_lon": row.orig_lon,
@@ -305,7 +280,11 @@ print("Test 7: Verify Init Script on Workers")
 print("-" * 80)
 
 def check_valhalla_on_worker(iterator):
-    """Check if Valhalla is available on worker"""
+    """Check if Valhalla is available on worker.
+
+    Note: spark.range(sc.defaultParallelism) creates exactly one row per partition,
+    so this yields exactly one result row per executor — intentional.
+    """
     import os
     import pandas as pd
     

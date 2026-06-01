@@ -22,6 +22,7 @@
 # MAGIC
 # MAGIC **Estimated Runtime:**
 # MAGIC - Small region (Andorra): 5-10 minutes
+# MAGIC - Medium region (France): 30-60 minutes
 # MAGIC - Medium region (Spain): 20-40 minutes
 # MAGIC - Large region (USA): 1-3 hours
 # MAGIC
@@ -32,9 +33,12 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./valhalla_utils
+
+# COMMAND ----------
+
 # DBTITLE 1,Set Parameters and Ensure Volume Exists
 import os
-import re
 
 dbutils.widgets.text("PBF_URL", "https://download.geofabrik.de/europe/andorra-latest.osm.pbf", "PBF URL")
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Target Volume Path")
@@ -42,76 +46,37 @@ dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_
 pbf_url = dbutils.widgets.get("PBF_URL")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
 
-# Validate identifiers to prevent SQL injection
-# Unity Catalog identifier rules (non-delimited/unquoted identifiers):
-# - Must start with letter (A-Z, a-z) or underscore (_)
-# - Can contain letters, digits (0-9), and underscores
-# - Maximum 255 characters
-# Reference: https://docs.databricks.com/sql/language-manual/sql-ref-identifiers.html
-def validate_identifier(name, identifier_type="identifier"):
-    """
-    Validate Unity Catalog identifier for security.
-    
-    Only allows non-delimited identifiers (no backticks) to prevent SQL injection.
-    Follows Databricks naming rules for catalogs, schemas, and volumes.
-    """
-    if not name:
-        raise ValueError(f"{identifier_type} cannot be empty")
-    
-    if len(name) > 255:
-        raise ValueError(f"{identifier_type} too long: {len(name)} chars (max 255)")
-    
-    # Must start with letter or underscore
-    if not re.match(r'^[a-zA-Z_]', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Must start with a letter (A-Z, a-z) or underscore (_)."
-        )
-    
-    # Can only contain letters, digits, and underscores
-    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Can only contain letters, digits, and underscores. "
-            f"Hyphens and special characters require backtick escaping (not supported for security)."
-        )
-    
-    return name
+catalog, schema, volume = parse_volume_path(volume_path)
 
-# Parse volume path to extract catalog, schema, volume
-volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
-match = re.match(volume_pattern, volume_path)
+print(f"🔧 Ensuring volume exists...")
 
-if match:
-    catalog, schema, volume = match.groups()
-    
-    # Validate extracted identifiers
-    catalog = validate_identifier(catalog, "catalog name")
-    schema = validate_identifier(schema, "schema name")
-    volume = validate_identifier(volume, "volume name")
-    
-    print(f"🔧 Ensuring volume exists...")
-    
-    # Create catalog (may fail if no permissions)
-    try:
-        spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-        print(f"✅ Catalog {catalog} ready")
-    except Exception as e:
-        print(f"⚠️  Catalog: {e} (assuming it exists)")
-    
-    # Create schema
-    try:
-        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
-        print(f"✅ Schema {catalog}.{schema} ready")
-    except Exception as e:
-        print(f"⚠️  Schema: {e} (assuming it exists)")
-    
-    # Create volume
-    try:
-        spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{schema}.{volume}")
-        print(f"✅ Volume {catalog}.{schema}.{volume} ready")
-    except Exception as e:
-        print(f"⚠️  Volume: {e} (assuming it exists)")
+# Create catalog (may fail if no permissions)
+try:
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+    print(f"✅ Catalog {catalog} ready")
+except Exception as e:
+    print(f"⚠️  Catalog: {e} (assuming it exists)")
+
+# Create schema
+try:
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    print(f"✅ Schema {catalog}.{schema} ready")
+except Exception as e:
+    print(f"⚠️  Schema: {e} (assuming it exists)")
+
+# Create volume
+try:
+    spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{schema}.{volume}")
+    print(f"✅ Volume {catalog}.{schema}.{volume} ready")
+except Exception as e:
+    print(f"⚠️  Volume: {e} (assuming it exists)")
+
+# Verify volume is accessible before starting the expensive tile build
+try:
+    dbutils.fs.ls(volume_path)
+    print(f"✅ Volume accessible at: {volume_path}")
+except Exception as e:
+    raise RuntimeError(f"Volume not accessible at {volume_path}: {e}") from e
 
 os.environ["PBF_URL"] = pbf_url
 os.environ["VALHALLA_VOLUME_PATH"] = volume_path
@@ -257,20 +222,24 @@ config_path = f"{tile_dir}/valhalla.json"
 print(f"📁 Tile directory contents:")
 print("=" * 80)
 
-# List files
-for root, dirs, files in os.walk(tile_dir):
-    level = root.replace(tile_dir, '').count(os.sep)
-    indent = ' ' * 2 * level
-    print(f'{indent}{os.path.basename(root)}/')
-    subindent = ' ' * 2 * (level + 1)
-    for file in sorted(files)[:10]:  # Limit to first 10 files per directory
-        file_path = os.path.join(root, file)
-        size = os.path.getsize(file_path)
-        size_mb = size / (1024 * 1024)
-        print(f'{subindent}{file} ({size_mb:.2f} MB)')
-    if len(files) > 10:
-        print(f'{subindent}... and {len(files) - 10} more files')
-    break  # Only show top level
+# Show top-level directory contents
+print(f"Top-level contents of {tile_dir}:")
+for name in sorted(os.listdir(tile_dir))[:20]:
+    full_path = os.path.join(tile_dir, name)
+    if os.path.isfile(full_path):
+        size_mb = os.path.getsize(full_path) / (1024 * 1024)
+        print(f"  {name} ({size_mb:.2f} MB)")
+    else:
+        print(f"  {name}/")
+
+# Count all .gph tile files across all subdirectories
+tile_count = sum(
+    1 for _, _, files in os.walk(tile_dir)
+    for f in files if f.endswith(".gph")
+)
+print(f"\n✅ Total .gph tile files: {tile_count}")
+if tile_count == 0:
+    print("⚠️  No .gph tiles found — tile build may not have completed")
 
 print("=" * 80)
 
@@ -297,11 +266,10 @@ config_path = f"{volume_path}/tiles/valhalla.json"
 force_cli = False  # Set to True to force using CLI fallback
 
 # Test coordinates - adjust these to match your tile coverage
-# These are sample coordinates for Andorra
 query = {
     "locations": [
-        {"lat": 42.5078, "lon": 1.5211, "type": "break", "city": "Andorra la Vella"},
-        {"lat": 42.5562, "lon": 1.5336, "type": "break", "city": "Ordino"}
+        {"lat": 48.8566, "lon": 2.3522, "type": "break", "city": "Paris"},
+        {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"}
     ],
     "costing": "auto",
     "directions_options": {"units": "kilometers"}

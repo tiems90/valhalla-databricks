@@ -24,12 +24,81 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./valhalla_utils
+
+# COMMAND ----------
+
 # DBTITLE 1,Parameters
 import os
 
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_france", "Volume Path")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
-config_path = f"{volume_path}/tiles/valhalla.json"
+config_path  = f"{volume_path}/tiles/valhalla.json"
+
+_, _, _vol = parse_volume_path(volume_path)
+
+# Region-specific example traces — keyed on volume name fragment.
+# Add a new entry here when building tiles for a new region.
+_REGION_EXAMPLES = {
+    "france": {
+        "trace_route_path": [        # Arc de Triomphe → Place de la Concorde
+            (48.8738, 2.2950), (48.8718, 2.3010), (48.8700, 2.3070),
+            (48.8686, 2.3130), (48.8673, 2.3190), (48.8661, 2.3250), (48.8655, 2.3305),
+        ],
+        "trace_attributes_path": [  # Boulevard Périphérique, Porte de Bercy → Porte de Vincennes
+            (48.8317, 2.3828), (48.8325, 2.3880), (48.8330, 2.3940),
+            (48.8338, 2.3990), (48.8347, 2.4052), (48.8356, 2.4090),
+        ],
+        "cities": [
+            ("Paris",       48.8566,  2.3522), ("Lyon",        45.7640,  4.8357),
+            ("Marseille",   43.2965,  5.3698), ("Toulouse",    43.6047,  1.4442),
+            ("Bordeaux",    44.8378, -0.5792), ("Nantes",      47.2184, -1.5536),
+            ("Strasbourg",  48.5734,  7.7521), ("Nice",        43.7102,  7.2620),
+            ("Rennes",      48.1173, -1.6778), ("Grenoble",    45.1885,  5.7245),
+        ],
+    },
+    "luxembourg": {
+        "trace_route_path": [        # Luxembourg City centre → Kirchberg district
+            (49.6117, 6.1319), (49.6135, 6.1360), (49.6152, 6.1398),
+            (49.6168, 6.1435), (49.6183, 6.1468), (49.6195, 6.1497),
+        ],
+        "trace_attributes_path": [  # Route d'Arlon, Luxembourg City
+            (49.6100, 6.1150), (49.6108, 6.1190), (49.6115, 6.1230),
+            (49.6120, 6.1270), (49.6124, 6.1310), (49.6117, 6.1319),
+        ],
+        "cities": [
+            ("Luxembourg City", 49.6117, 6.1319), ("Esch-sur-Alzette", 49.4953, 5.9806),
+            ("Differdange",     49.5241, 5.8864), ("Dudelange",        49.4803, 6.0872),
+            ("Ettelbruck",      49.8472, 6.1044),
+        ],
+    },
+    "andorra": {
+        "trace_route_path": [        # Andorra la Vella → Escaldes-Engordany
+            (42.5063, 1.5218), (42.5080, 1.5235), (42.5098, 1.5265),
+            (42.5115, 1.5290), (42.5130, 1.5310), (42.5145, 1.5336),
+        ],
+        "trace_attributes_path": [  # CG-1 main road
+            (42.5078, 1.5211), (42.5120, 1.5260), (42.5160, 1.5305),
+            (42.5200, 1.5340), (42.5240, 1.5370), (42.5280, 1.5390),
+        ],
+        "cities": [
+            ("Andorra la Vella", 42.5063, 1.5218), ("Escaldes",  42.5120, 1.5352),
+            ("Encamp",           42.5353, 1.5800), ("Canillo",   42.5673, 1.5978),
+            ("La Massana",       42.5449, 1.5148),
+        ],
+    },
+}
+
+# Pick the matching config or fall back to the first available
+_region_key = next((k for k in _REGION_EXAMPLES if k in _vol.lower()), None)
+if _region_key is None:
+    raise ValueError(
+        f"No example traces configured for volume '{_vol}'. "
+        f"Add an entry to _REGION_EXAMPLES in the Parameters cell. "
+        f"Known regions: {list(_REGION_EXAMPLES)}"
+    )
+_examples = _REGION_EXAMPLES[_region_key]
+print(f"📍 Region: {_region_key} ({len(_examples['cities'])} cities configured)")
 
 # COMMAND ----------
 
@@ -51,23 +120,15 @@ print(actor.status())
 
 # COMMAND ----------
 
-# DBTITLE 1,Simulate a noisy GPS trace: Paris 8th arrondissement
+# DBTITLE 1,Simulate a noisy GPS trace
 import random
 import math
 import json
 
 random.seed(42)
 
-# True path: Arc de Triomphe → Champs-Élysées → Place de la Concorde
-true_path = [
-    (48.8738, 2.2950),  # Arc de Triomphe
-    (48.8718, 2.3010),
-    (48.8700, 2.3070),
-    (48.8686, 2.3130),
-    (48.8673, 2.3190),
-    (48.8661, 2.3250),
-    (48.8655, 2.3305),  # Place de la Concorde
-]
+true_path = _examples["trace_route_path"]
+print(f"Example trace: {len(true_path)} points ({_region_key} region)")
 
 def add_gps_noise(lat, lon, noise_m=15):
     """Add realistic GPS noise (~15m radius)."""
@@ -116,17 +177,8 @@ for leg in trip.get("legs", []):
 
 # COMMAND ----------
 
-# DBTITLE 1,trace_attributes: Paris Périphérique segment
-# Simulate a trace on the Boulevard Périphérique (Paris ring road)
-# Porte de Bercy → Porte de Charenton → Porte de Vincennes
-peripherique_trace = [
-    (48.8317, 2.3828),  # Porte de Bercy
-    (48.8325, 2.3880),
-    (48.8330, 2.3940),
-    (48.8338, 2.3990),
-    (48.8347, 2.4052),
-    (48.8356, 2.4090),  # Porte de Vincennes area
-]
+# DBTITLE 1,trace_attributes: road segment example
+peripherique_trace = _examples["trace_attributes_path"]
 
 trace_attr_request = {
     "shape": [{"lat": lat, "lon": lon} for lat, lon in peripherique_trace],
@@ -253,143 +305,114 @@ for e in result_encoded.get("edges", []):
 
 # COMMAND ----------
 
+# DBTITLE 1,Map matching configuration
+# Tune these before running the distributed section.
+# See: https://valhalla.github.io/valhalla/api/map-matching/api-reference/
+#
+# gps_accuracy      — Gaussian noise radius (metres). Match smartphone GPS: 8–10m, surveyed routes: 2–4m
+# search_radius     — Max distance to candidate road edges (metres, max 100). Lower for dense urban areas.
+# shape_match       — Matching strategy: walk_or_snap (default), map_snap (fuzzy), edge_walk (strict)
+# turn_penalty_factor — Penalises unlikely turns. Raise to 75–150 for noisy vehicle traces, 500 for pedestrians.
+# breakage_distance — Split trace if consecutive points exceed this (metres). Handles GPS dropouts.
+# interpolation_distance — Cluster stationary/jitter points within this radius (metres). Key jitter defence.
+
+dbutils.widgets.text("gps_accuracy",           "10",           "GPS accuracy (m)")
+dbutils.widgets.text("search_radius",          "50",           "Search radius (m)")
+dbutils.widgets.dropdown("shape_match",        "walk_or_snap", ["walk_or_snap", "map_snap", "edge_walk"])
+dbutils.widgets.text("turn_penalty_factor",    "100",          "Turn penalty factor")
+dbutils.widgets.text("breakage_distance",      "2000",         "Breakage distance (m)")
+dbutils.widgets.text("interpolation_distance", "10",           "Interpolation distance (m)")
+
+MATCH_CONFIG = {
+    "gps_accuracy":           int(dbutils.widgets.get("gps_accuracy")),
+    "search_radius":          int(dbutils.widgets.get("search_radius")),
+    "shape_match":            dbutils.widgets.get("shape_match"),
+    "turn_penalty_factor":    int(dbutils.widgets.get("turn_penalty_factor")),
+    "breakage_distance":      int(dbutils.widgets.get("breakage_distance")),
+    "interpolation_distance": int(dbutils.widgets.get("interpolation_distance")),
+}
+print("Map matching config:", MATCH_CONFIG)
+
+# COMMAND ----------
+
 # DBTITLE 1,Generate synthetic fleet GPS traces across France
 import random
 import math
 
 random.seed(0)
 
-# Representative French city centres with short urban drive patterns
-CITIES = [
-    ("Paris",      48.8566,  2.3522),
-    ("Lyon",       45.7640,  4.8357),
-    ("Marseille",  43.2965,  5.3698),
-    ("Toulouse",   43.6047,  1.4442),
-    ("Bordeaux",   44.8378, -0.5792),
-    ("Nantes",     47.2184, -1.5536),
-    ("Strasbourg", 48.5734,  7.7521),
-    ("Nice",       43.7102,  7.2620),
-    ("Rennes",     48.1173, -1.6778),
-    ("Grenoble",   45.1885,  5.7245),
-]
+# City centres for the current region — loaded from _REGION_EXAMPLES in the Parameters cell
+CITIES = _examples["cities"]
 
-def simulate_trip(city_name, lat, lon, n_points=8, noise_m=12):
-    """Simulate a short urban GPS trace starting near a city centre."""
+def simulate_trip(city_name, lat, lon, n_points=8, base_noise_m=12, start_time=1_700_000_000):
+    """
+    Simulate a short urban GPS trace with per-point metadata:
+      - time       : Unix timestamp (~5s between points, ~60-90m steps → ~50-65 km/h urban speed)
+      - accuracy   : GPS accuracy in metres (varies to simulate signal quality)
+
+    These fields are passed straight through to Valhalla's per-point shape API.
+    For real fleet data, substitute actual HDOP-derived accuracy and device heading.
+
+    IMPORTANT — timestamps and distance must be speed-consistent. Valhalla's HMM uses
+    timestamps to compute transition probabilities: if implied speed between two points
+    exceeds what's plausible for the costing mode, the match will fail. Always verify
+    that (distance / time_delta) falls within a realistic range for your costing.
+    """
     rng = random.Random(hash(city_name))
-    points = []
+    true_points = []
     cur_lat, cur_lon = lat, lon
     for _ in range(n_points):
-        # Small random step (~100m)
         cur_lat += rng.gauss(0, 0.0004)
         cur_lon += rng.gauss(0, 0.0006)
-        # GPS noise
-        noisy_lat = cur_lat + rng.gauss(0, noise_m / 111_000)
-        noisy_lon = cur_lon + rng.gauss(0, noise_m / (111_000 * math.cos(math.radians(cur_lat))))
-        points.append((round(noisy_lat, 6), round(noisy_lon, 6)))
+        true_points.append((cur_lat, cur_lon))
+
+    points = []
+    for i, (true_lat, true_lon) in enumerate(true_points):
+        # Vary accuracy: simulate occasional poor signal (urban canyon, etc.)
+        point_accuracy = round(base_noise_m * rng.uniform(0.5, 2.5), 1)
+        noise_m = point_accuracy
+        noisy_lat = true_lat + rng.gauss(0, noise_m / 111_000)
+        noisy_lon = true_lon + rng.gauss(0, noise_m / (111_000 * math.cos(math.radians(true_lat))))
+
+        point = {
+            "lat":      round(noisy_lat, 6),
+            "lon":      round(noisy_lon, 6),
+            "time":     start_time + i * 5,
+            "accuracy": point_accuracy,
+        }
+
+        points.append(point)
     return points
 
 traces = []
 for city, lat, lon in CITIES:
     for trip_id in range(10):  # 10 trips per city = 100 trips total
         points = simulate_trip(city, lat, lon)
-        # Store as JSON string for Spark serialisation
-        shape_json = json.dumps([{"lat": p[0], "lon": p[1]} for p in points])
+        # shape_json preserves all per-point fields (time, accuracy, etc.)
+        shape_json = json.dumps(points)
         traces.append((f"{city}_{trip_id:02d}", city, shape_json))
 
-trips_df = spark.createDataFrame(traces, ["trip_id", "city", "shape_json"]).repartition(20)
-print(f"Created {trips_df.count()} GPS traces across {len(CITIES)} French cities")
+N_PARTITIONS = max(20, len(traces) // 2000)
+trips_df = spark.createDataFrame(traces, ["trip_id", "city", "shape_json"]).repartition(N_PARTITIONS)
+print(f"Created {len(traces)} GPS traces across {len(CITIES)} French cities ({N_PARTITIONS} partitions)")
 
 # COMMAND ----------
 
 # DBTITLE 1,Distributed trace_attributes via mapInPandas
-from typing import Iterator
-import pandas as pd
-import valhalla
+from pyspark.sql.functions import parse_json, from_json
 from pyspark.databricks.sql import functions as dbf
 
-def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
-    actor = valhalla.Actor(config_path)   # one actor per Spark task
+_MATCH_CONFIG = dict(MATCH_CONFIG)  # snapshot at submission time
+match_fn      = make_match_traces(config_path, _MATCH_CONFIG)
 
-    for pdf in batch_iter:
-        rows = []
-        for _, row in pdf.iterrows():
-            shape = json.loads(row["shape_json"])
-            try:
-                result = actor.trace_attributes({
-                    "shape": shape,
-                    "costing": "auto",
-                    "shape_match": "walk_or_snap",
-                    "gps_accuracy": 12,
-                    "search_radius": 50,
-                    "filters": {
-                        "attributes": [
-                            "edge.names", "edge.road_class", "edge.speed",
-                            "edge.length", "edge.toll", "edge.way_id",
-                        ],
-                        "action": "include"
-                    }
-                })
-
-                edges = result.get("edges", [])
-                total_length_km = sum(e.get("length", 0) for e in edges)
-                avg_speed = (
-                    sum(e.get("speed", 0) for e in edges) / len(edges)
-                    if edges else None
-                )
-                has_toll = any(e.get("toll", False) for e in edges)
-                road_classes = list({e.get("road_class") for e in edges if e.get("road_class")})
-                confidence = result.get("confidence_score")
-
-                # Reconstruct matched geometry as WKT from shape
-                from valhalla.utils import decode_polyline
-                coords = decode_polyline(result.get("shape", ""))
-                geometry_wkt = (
-                    "LINESTRING ({})".format(", ".join(f"{lon} {lat}" for lat, lon in coords))
-                    if coords else None
-                )
-
-                rows.append({
-                    "trip_id":         row["trip_id"],
-                    "city":            row["city"],
-                    "n_edges":         len(edges),
-                    "total_length_km": round(total_length_km, 3),
-                    "avg_speed_kmh":   round(avg_speed, 1) if avg_speed else None,
-                    "has_toll_road":   has_toll,
-                    "road_classes":    ", ".join(sorted(road_classes)),
-                    "confidence":      confidence,
-                    "geometry_wkt":    geometry_wkt,
-                    "error":           None,
-                })
-            except Exception as e:
-                rows.append({
-                    "trip_id":         row["trip_id"],
-                    "city":            row["city"],
-                    "n_edges":         None,
-                    "total_length_km": None,
-                    "avg_speed_kmh":   None,
-                    "has_toll_road":   None,
-                    "road_classes":    None,
-                    "confidence":      None,
-                    "geometry_wkt":    None,
-                    "error":           str(e),
-                })
-        yield pd.DataFrame(rows)
-
-matched_df = trips_df.mapInPandas(
-    match_traces,
-    schema="""
-        trip_id string, city string,
-        n_edges int, total_length_km double, avg_speed_kmh double,
-        has_toll_road boolean, road_classes string, confidence double,
-        geometry_wkt string, error string
-    """
-).withColumn(
-    "geometry",
-    dbf.st_setsrid(dbf.try_to_geometry("geometry_wkt"), 4326)
-).drop("geometry_wkt")
+matched_df = trips_df.mapInPandas(match_fn, schema=MATCH_TRACES_SCHEMA) \
+    .withColumn("geometry", dbf.st_setsrid(dbf.try_to_geometry("geometry_wkt"), 4326)) \
+    .withColumn("result",   parse_json("result_json")) \
+    .withColumn("edges",    from_json("edges_json", edge_schema)) \
+    .drop("geometry_wkt", "result_json", "edges_json")
 
 matched_df.cache()
-matched_df.count()
+total_count = matched_df.count()
 
 # COMMAND ----------
 
@@ -417,11 +440,11 @@ matched_df.filter(matched_df.error.isNull()) \
 # COMMAND ----------
 
 # DBTITLE 1,Failure rate
-total = matched_df.count()
+total_count = matched_df.count()
 failed = matched_df.filter(matched_df.error.isNotNull()).count()
-print(f"Total trips : {total}")
-print(f"Matched     : {total - failed}  ({(total - failed) / total * 100:.1f}%)")
-print(f"Failed      : {failed}  ({failed / total * 100:.1f}%)")
+print(f"Total trips : {total_count}")
+print(f"Matched     : {total_count - failed}  ({(total_count - failed) / total_count * 100:.1f}%)")
+print(f"Failed      : {failed}  ({failed / total_count * 100:.1f}%)")
 
 if failed > 0:
     print("\nSample errors:")

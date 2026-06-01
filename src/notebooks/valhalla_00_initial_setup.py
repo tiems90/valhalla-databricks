@@ -33,61 +33,17 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./valhalla_utils
+
+# COMMAND ----------
+
 # DBTITLE 1,Configure Volume Path and Ensure It Exists
 import os
-import re
 
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Target Volume Path")
 vol_base = dbutils.widgets.get("VOLUME_PATH")
 
-# Parse volume path to extract catalog, schema, volume
-volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
-match = re.match(volume_pattern, vol_base)
-
-if not match:
-    raise ValueError(f"Invalid volume path format: {vol_base}. Expected: /Volumes/catalog/schema/volume")
-
-catalog, schema, volume = match.groups()
-
-# Validate identifiers to prevent SQL injection
-# Unity Catalog identifier rules (non-delimited/unquoted identifiers):
-# - Must start with letter (A-Z, a-z) or underscore (_)
-# - Can contain letters, digits (0-9), and underscores
-# - Maximum 255 characters
-# Reference: https://docs.databricks.com/sql/language-manual/sql-ref-identifiers.html
-def validate_identifier(name, identifier_type="identifier"):
-    """
-    Validate Unity Catalog identifier for security.
-    
-    Only allows non-delimited identifiers (no backticks) to prevent SQL injection.
-    Follows Databricks naming rules for catalogs, schemas, and volumes.
-    """
-    if not name:
-        raise ValueError(f"{identifier_type} cannot be empty")
-    
-    if len(name) > 255:
-        raise ValueError(f"{identifier_type} too long: {len(name)} chars (max 255)")
-    
-    # Must start with letter or underscore
-    if not re.match(r'^[a-zA-Z_]', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Must start with a letter (A-Z, a-z) or underscore (_)."
-        )
-    
-    # Can only contain letters, digits, and underscores
-    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Can only contain letters, digits, and underscores. "
-            f"Hyphens and special characters require backtick escaping (not supported for security)."
-        )
-    
-    return name
-
-catalog = validate_identifier(catalog, "catalog name")
-schema = validate_identifier(schema, "schema name")
-volume = validate_identifier(volume, "volume name")
+catalog, schema, volume = parse_volume_path(vol_base)
 
 print(f"🔧 Ensuring volume exists...")
 print(f"   Catalog: {catalog}")
@@ -395,7 +351,8 @@ fi
 """
 
 # Write script to Volumes
-dbutils.fs.put(init_script_path, init_script_content, overwrite=True)
+with open(init_script_path, "w") as f:
+    f.write(init_script_content)
 print(f"✅ Init script written to: {init_script_path}")
 print(f"   Script size: {len(init_script_content)} bytes")
 
@@ -404,7 +361,8 @@ print(f"   Script size: {len(init_script_content)} bytes")
 # DBTITLE 1,Preview Init Script
 print("📄 Init Script Preview:")
 print("=" * 80)
-print(dbutils.fs.head(init_script_path, 2000))
+with open(init_script_path, "r") as f:
+    print(f.read(2000))
 print("=" * 80)
 print(f"\n✅ Full script available at: {init_script_path}")
 print(f"\nTo use this init script:")

@@ -12,7 +12,7 @@ include:
 # Sync notebooks and source code
 sync:
   include:
-    - src/notebooks/**/*.py
+    - src/notebooks/**
 
 # Artifact configuration for wheel builds (optional)
 # artifacts:
@@ -33,22 +33,22 @@ variables:
   valhalla_catalog:
     description: "Unity Catalog catalog for Valhalla artifacts"
     default: "your_catalog"
-  
+
   valhalla_schema:
     description: "Unity Catalog schema for Valhalla artifacts"
     default: "your_schema"
-  
+
   valhalla_volume:
     description: "Unity Catalog volume for Valhalla artifacts (will store compiled binaries, wheels, tiles)"
     default: "valhalla_region"
   
   valhalla_pbf_url:
-    description: "OSM PBF URL for testing"
+    description: "OSM PBF URL for the region to build tiles for"
     default: "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
   
   spark_version:
     description: "Databricks Runtime version for all tasks"
-    default: "18.0.x-scala2.13"
+    default: "18.2.x-scala2.13"
   
   runtime_engine:
     description: "Runtime engine: STANDARD or PHOTON"

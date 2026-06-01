@@ -81,6 +81,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ./valhalla_utils
+
+# COMMAND ----------
+
 # DBTITLE 1,Define Input Parameters
 # Example configurations for different regions
 # Uncomment the region you want to use:
@@ -88,11 +92,17 @@
 # Small test region - Andorra (fastest, good for testing)
 pbf_url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
 catalog = 'your_catalog'
-schema = 'your_schema'
-volume = 'valhalla_andorra'
+schema  = 'your_schema'
+volume  = 'valhalla_andorra'
 
-# Medium region - Spain
-# pbf_url = "https://download.geofabrik.de/europe/spain-latest.osm.pbf"
+# France
+# pbf_url = "https://download.geofabrik.de/europe/france-latest.osm.pbf"
+# catalog = 'your_catalog'
+# schema  = 'your_schema'
+# volume  = 'valhalla_france'
+
+# Small test region - Andorra (fastest, good for testing)
+# pbf_url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
 # catalog = 'your_catalog'
 # schema = 'your_schema'
 # volume = 'valhalla_spain'
@@ -102,44 +112,6 @@ volume = 'valhalla_andorra'
 # catalog = 'your_catalog'
 # schema = 'your_schema'
 # volume = 'valhalla_us'
-
-# Validate identifiers to prevent SQL injection
-# Unity Catalog identifier rules (non-delimited/unquoted identifiers):
-# - Must start with letter (A-Z, a-z) or underscore (_)
-# - Can contain letters, digits (0-9), and underscores
-# - Maximum 255 characters
-# Reference: https://docs.databricks.com/sql/language-manual/sql-ref-identifiers.html
-import re
-
-def validate_identifier(name, identifier_type="identifier"):
-    """
-    Validate Unity Catalog identifier for security.
-    
-    Only allows non-delimited identifiers (no backticks) to prevent SQL injection.
-    Follows Databricks naming rules for catalogs, schemas, and volumes.
-    """
-    if not name:
-        raise ValueError(f"{identifier_type} cannot be empty")
-    
-    if len(name) > 255:
-        raise ValueError(f"{identifier_type} too long: {len(name)} chars (max 255)")
-    
-    # Must start with letter or underscore
-    if not re.match(r'^[a-zA-Z_]', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Must start with a letter (A-Z, a-z) or underscore (_)."
-        )
-    
-    # Can only contain letters, digits, and underscores
-    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Can only contain letters, digits, and underscores. "
-            f"Hyphens and special characters require backtick escaping (not supported for security)."
-        )
-    
-    return name
 
 catalog = validate_identifier(catalog, "catalog name")
 schema = validate_identifier(schema, "schema name")
@@ -201,7 +173,7 @@ print("")
 
 dbutils.notebook.run(
     path="./valhalla_01_process_pbf",
-    timeout_seconds=7200,  # 2 hour timeout
+    timeout_seconds=86400,  # 24 hour timeout (large regions like France can take several hours)
     arguments={
         "VOLUME_PATH": volume_path,
         "PBF_URL": pbf_url
@@ -262,8 +234,27 @@ print(actor.status())
 # DBTITLE 1,Run Sample Route Queries
 # Adjust coordinates based on your region
 
-# Example 1: Andorra
-if "andorra" in volume.lower():
+# Example 1: France
+if "france" in volume.lower():
+    queries = [
+        {
+            "name": "Paris to Lyon",
+            "locations": [
+                {"lat": 48.8566, "lon": 2.3522, "type": "break", "city": "Paris"},
+                {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"}
+            ]
+        },
+        {
+            "name": "Lyon to Marseille",
+            "locations": [
+                {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"},
+                {"lat": 43.2965, "lon": 5.3698, "type": "break", "city": "Marseille"}
+            ]
+        }
+    ]
+
+# Example 2: Andorra (small test region)
+elif "andorra" in volume.lower():
     queries = [
         {
             "name": "Andorra la Vella to Ordino",
@@ -271,17 +262,10 @@ if "andorra" in volume.lower():
                 {"lat": 42.5078, "lon": 1.5211, "type": "break", "city": "Andorra la Vella"},
                 {"lat": 42.5562, "lon": 1.5336, "type": "break", "city": "Ordino"}
             ]
-        },
-        {
-            "name": "Pas de la Casa to Sant Julià de Lòria",
-            "locations": [
-                {"lat": 42.5425, "lon": 1.7336, "type": "break", "city": "Pas de la Casa"},
-                {"lat": 42.4638, "lon": 1.4911, "type": "break", "city": "Sant Julià"}
-            ]
         }
     ]
 
-# Example 2: Spain
+# Example 3: Spain
 elif "spain" in volume.lower():
     queries = [
         {
@@ -306,7 +290,7 @@ elif "us" in volume.lower():
         {
             "name": "Portland to San Francisco",
             "locations": [
-                {"lat": 43.6591, "lon": -70.2568, "type": "break", "city": "Portland"},
+                {"lat": 45.5051, "lon": -122.6750, "type": "break", "city": "Portland, OR"},
                 {"lat": 37.7749, "lon": -122.4194, "type": "break", "city": "San Francisco"}
             ]
         },
