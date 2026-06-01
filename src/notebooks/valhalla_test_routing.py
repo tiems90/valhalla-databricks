@@ -13,9 +13,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Setup and Configuration
 # MAGIC %run ./valhalla_utils
 
+# COMMAND ----------
+
+# DBTITLE 1,Setup and Configuration
 import json
 import sys
 import re

@@ -33,9 +33,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Configure Volume Path and Ensure It Exists
 # MAGIC %run ./valhalla_utils
 
+# COMMAND ----------
+
+# DBTITLE 1,Configure Volume Path and Ensure It Exists
 import os
 import re
 

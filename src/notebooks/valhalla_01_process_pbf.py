@@ -33,9 +33,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Set Parameters and Ensure Volume Exists
 # MAGIC %run ./valhalla_utils
 
+# COMMAND ----------
+
+# DBTITLE 1,Set Parameters and Ensure Volume Exists
 import os
 import re
 

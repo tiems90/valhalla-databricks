@@ -81,9 +81,11 @@
 
 # COMMAND ----------
 
-# DBTITLE 1,Define Input Parameters
 # MAGIC %run ./valhalla_utils
 
+# COMMAND ----------
+
+# DBTITLE 1,Define Input Parameters
 # Example configurations for different regions
 # Uncomment the region you want to use:
 
