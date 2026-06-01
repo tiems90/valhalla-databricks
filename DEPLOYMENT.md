@@ -41,7 +41,7 @@ Your Databricks user needs:
 ### Workspace Requirements
 
 - **Unity Catalog enabled** (check in workspace settings)
-- **Databricks Runtime 17.3.x (LTS)** ✅ or **18.0.x** ✅ or higher
+- **Databricks Runtime 17.3.x (LTS)** ✅ or **18.0.x** ✅ or **18.2.x** ✅ (latest tested, Spark 4.1.0)
 - **Cloud provider**: AWS, Azure, or GCP
 
 ## Initial Setup
@@ -108,7 +108,7 @@ node_type_id: "n2-standard-8"  # 8 vCPUs, 32 GB RAM
 #### Spark Version and Runtime Engine
 
 ```yaml
-spark_version: "18.0.x-scala2.13"  # Or "17.3.x-scala2.13" for LTS
+spark_version: "18.2.x-scala2.13"  # 18.2 = latest tested; "18.0.x" or "17.3.x" also supported
 runtime_engine: "STANDARD"  # Or "PHOTON" for Photon acceleration
 ```
 
@@ -144,7 +144,7 @@ node_type_id: "Standard_D8s_v3"  # 8 vCPUs, 32 GB RAM
 #### Spark Version and Runtime Engine
 
 ```yaml
-spark_version: "18.0.x-scala2.13"  # Or "17.3.x-scala2.13" for LTS
+spark_version: "18.2.x-scala2.13"  # 18.2 = latest tested; "18.0.x" or "17.3.x" also supported
 runtime_engine: "STANDARD"  # Or "PHOTON" for Photon acceleration
 ```
 
@@ -176,7 +176,7 @@ node_type_id: "m5.2xlarge"  # 8 vCPUs, 32 GB RAM
 #### Spark Version and Runtime Engine
 
 ```yaml
-spark_version: "18.0.x-scala2.13"  # Or "17.3.x-scala2.13" for LTS
+spark_version: "18.2.x-scala2.13"  # 18.2 = latest tested; "18.0.x" or "17.3.x" also supported
 runtime_engine: "STANDARD"  # Or "PHOTON" for Photon acceleration
 ```
 
@@ -445,7 +445,7 @@ databricks auth login --profile <profile-name> --host <workspace-url>
 **Symptom**: GCC errors about `format-truncation`
 
 **Solution**:
-- Verify DBR version is 18.0.x or higher
+- Verify DBR version is 18.0.x or higher (18.2.x recommended)
 - Check compiler flags in `valhalla_00_initial_setup.py`:
   ```bash
   -DCMAKE_CXX_FLAGS="-Wno-error=format-truncation -Wno-format-truncation"

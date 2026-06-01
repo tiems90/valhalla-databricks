@@ -199,7 +199,7 @@ The project uses `spark_version` and `runtime_engine` variables in `databricks.y
 variables:
   spark_version:
     description: "Databricks Runtime version for all tasks"
-    default: "18.0.x-scala2.13"  # Current production
+    default: "18.2.x-scala2.13"  # Current production (tested on Azure DBR 18.2, Spark 4.1.0)
   
   runtime_engine:
     description: "Runtime engine: STANDARD or PHOTON"

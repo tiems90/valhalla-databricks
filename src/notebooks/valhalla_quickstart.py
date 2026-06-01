@@ -5,6 +5,7 @@
 # MAGIC This notebook serves as a **single-node Valhalla quickstart** for routing based on OpenStreetMap `.pbf` data.
 # MAGIC
 # MAGIC **Tested with:**
+# MAGIC - **DBR 18.2.x-scala2.13** (standard & Photon, Spark 4.1.0) ✅
 # MAGIC - **DBR 18.0.x-scala2.13** (standard & Photon) ✅
 # MAGIC - **DBR 17.3.x-scala2.13** (LTS, standard & Photon) ✅
 # MAGIC - **Single-node cluster** (n2-highmem-16 or larger recommended)
@@ -100,12 +101,6 @@ volume  = 'valhalla_andorra'
 # catalog = 'your_catalog'
 # schema  = 'your_schema'
 # volume  = 'valhalla_france'
-
-# Small test region - Andorra (fastest, good for testing)
-# pbf_url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
-# catalog = 'your_catalog'
-# schema = 'your_schema'
-# volume = 'valhalla_spain'
 
 # Large region - USA (takes 1-3 hours)
 # pbf_url = "https://download.geofabrik.de/north-america/us-latest.osm.pbf"
