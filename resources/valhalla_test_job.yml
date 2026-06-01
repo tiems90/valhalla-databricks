@@ -115,7 +115,34 @@ resources:
           
           timeout_seconds: 1800  # 30 minute timeout
           max_retries: 1
-      
+
+        # Task 4: Map matching examples
+        - task_key: map_matching
+          depends_on:
+            - task_key: test_routing
+
+          notebook_task:
+            notebook_path: ../src/notebooks/valhalla_map_matching.py
+            base_parameters:
+              VOLUME_PATH: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}"
+
+          new_cluster:
+            spark_version: "${var.spark_version}"
+            node_type_id: "${var.test_node_type}"
+            num_workers: 2
+            data_security_mode: "SINGLE_USER"
+            custom_tags:
+              usage: "valhalla-map-matching"
+
+            init_scripts:
+              - volumes:
+                  destination: "/Volumes/${var.valhalla_catalog}/${var.valhalla_schema}/${var.valhalla_volume}/init.sh"
+
+            runtime_engine: "${var.runtime_engine}"
+
+          timeout_seconds: 1800
+          max_retries: 1
+
       # Email notifications on success/failure
       email_notifications:
         on_success:
