@@ -85,14 +85,14 @@
 # Example configurations for different regions
 # Uncomment the region you want to use:
 
-# Small test region - Andorra (fastest, good for testing)
-pbf_url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
+# France
+pbf_url = "https://download.geofabrik.de/europe/france-latest.osm.pbf"
 catalog = 'your_catalog'
 schema = 'your_schema'
-volume = 'valhalla_andorra'
+volume = 'valhalla_france'
 
-# Medium region - Spain
-# pbf_url = "https://download.geofabrik.de/europe/spain-latest.osm.pbf"
+# Small test region - Andorra (fastest, good for testing)
+# pbf_url = "https://download.geofabrik.de/europe/andorra-latest.osm.pbf"
 # catalog = 'your_catalog'
 # schema = 'your_schema'
 # volume = 'valhalla_spain'
@@ -262,8 +262,27 @@ print(actor.status())
 # DBTITLE 1,Run Sample Route Queries
 # Adjust coordinates based on your region
 
-# Example 1: Andorra
-if "andorra" in volume.lower():
+# Example 1: France
+if "france" in volume.lower():
+    queries = [
+        {
+            "name": "Paris to Lyon",
+            "locations": [
+                {"lat": 48.8566, "lon": 2.3522, "type": "break", "city": "Paris"},
+                {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"}
+            ]
+        },
+        {
+            "name": "Lyon to Marseille",
+            "locations": [
+                {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"},
+                {"lat": 43.2965, "lon": 5.3698, "type": "break", "city": "Marseille"}
+            ]
+        }
+    ]
+
+# Example 2: Andorra (small test region)
+elif "andorra" in volume.lower():
     queries = [
         {
             "name": "Andorra la Vella to Ordino",
@@ -271,17 +290,10 @@ if "andorra" in volume.lower():
                 {"lat": 42.5078, "lon": 1.5211, "type": "break", "city": "Andorra la Vella"},
                 {"lat": 42.5562, "lon": 1.5336, "type": "break", "city": "Ordino"}
             ]
-        },
-        {
-            "name": "Pas de la Casa to Sant Julià de Lòria",
-            "locations": [
-                {"lat": 42.5425, "lon": 1.7336, "type": "break", "city": "Pas de la Casa"},
-                {"lat": 42.4638, "lon": 1.4911, "type": "break", "city": "Sant Julià"}
-            ]
         }
     ]
 
-# Example 2: Spain
+# Example 3: Spain
 elif "spain" in volume.lower():
     queries = [
         {

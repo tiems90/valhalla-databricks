@@ -22,6 +22,7 @@
 # MAGIC
 # MAGIC **Estimated Runtime:**
 # MAGIC - Small region (Andorra): 5-10 minutes
+# MAGIC - Medium region (France): 30-60 minutes
 # MAGIC - Medium region (Spain): 20-40 minutes
 # MAGIC - Large region (USA): 1-3 hours
 # MAGIC
@@ -36,7 +37,7 @@
 import os
 import re
 
-dbutils.widgets.text("PBF_URL", "https://download.geofabrik.de/europe/andorra-latest.osm.pbf", "PBF URL")
+dbutils.widgets.text("PBF_URL", "https://download.geofabrik.de/europe/france-latest.osm.pbf", "PBF URL")
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Target Volume Path")
 
 pbf_url = dbutils.widgets.get("PBF_URL")
@@ -297,11 +298,10 @@ config_path = f"{volume_path}/tiles/valhalla.json"
 force_cli = False  # Set to True to force using CLI fallback
 
 # Test coordinates - adjust these to match your tile coverage
-# These are sample coordinates for Andorra
 query = {
     "locations": [
-        {"lat": 42.5078, "lon": 1.5211, "type": "break", "city": "Andorra la Vella"},
-        {"lat": 42.5562, "lon": 1.5336, "type": "break", "city": "Ordino"}
+        {"lat": 48.8566, "lon": 2.3522, "type": "break", "city": "Paris"},
+        {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"}
     ],
     "costing": "auto",
     "directions_options": {"units": "kilometers"}

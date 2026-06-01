@@ -164,11 +164,11 @@ except Exception as e:
 print("Test 4: Single Route Query")
 print("-" * 80)
 
-# Test coordinates for Andorra
+# Test coordinates for France
 query = {
     "locations": [
-        {"lat": 42.5078, "lon": 1.5211, "type": "break", "city": "Andorra la Vella"},
-        {"lat": 42.5562, "lon": 1.5336, "type": "break", "city": "Ordino"}
+        {"lat": 48.8566, "lon": 2.3522, "type": "break", "city": "Paris"},
+        {"lat": 45.7640, "lon": 4.8357, "type": "break", "city": "Lyon"}
     ],
     "costing": "auto",
     "directions_options": {"units": "kilometers"}
@@ -231,15 +231,15 @@ from typing import Iterator
 import pandas as pd
 import valhalla
 
-# Create small test dataset (20 random OD pairs in Andorra bounds)
+# Create small test dataset (20 random OD pairs across France mainland)
 test_data = []
 import random
 for i in range(20):
     test_data.append((
-        42.428 + random.random() * (42.655 - 42.428),
-        1.413 + random.random() * (1.786 - 1.413),
-        42.428 + random.random() * (42.655 - 42.428),
-        1.413 + random.random() * (1.786 - 1.413)
+        42.3 + random.random() * (51.1 - 42.3),
+        -4.8 + random.random() * (8.2 - (-4.8)),
+        42.3 + random.random() * (51.1 - 42.3),
+        -4.8 + random.random() * (8.2 - (-4.8))
     ))
 
 test_df = spark.createDataFrame(test_data, ["orig_lat", "orig_lon", "dest_lat", "dest_lon"]).repartition(4)
