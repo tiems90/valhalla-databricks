@@ -361,7 +361,8 @@ fi
 """
 
 # Write script to Volumes
-dbutils.fs.put(init_script_path, init_script_content, overwrite=True)
+with open(init_script_path, "w") as f:
+    f.write(init_script_content)
 print(f"✅ Init script written to: {init_script_path}")
 print(f"   Script size: {len(init_script_content)} bytes")
 
@@ -370,7 +371,8 @@ print(f"   Script size: {len(init_script_content)} bytes")
 # DBTITLE 1,Preview Init Script
 print("📄 Init Script Preview:")
 print("=" * 80)
-print(dbutils.fs.head(init_script_path, 2000))
+with open(init_script_path, "r") as f:
+    print(f.read(2000))
 print("=" * 80)
 print(f"\n✅ Full script available at: {init_script_path}")
 print(f"\nTo use this init script:")
