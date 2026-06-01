@@ -1,9 +1,9 @@
 # Valhalla Routing Engine for Databricks
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Databricks](https://img.shields.io/badge/Databricks-Runtime%2018.0%2B-orange.svg)](https://docs.databricks.com/)
+[![Databricks](https://img.shields.io/badge/Databricks-Runtime%2018.2%2B-orange.svg)](https://docs.databricks.com/)
 
-Production-ready Databricks Asset Bundle for deploying and operating the [Valhalla](https://github.com/valhalla/valhalla) open-source routing engine on Databricks Runtime 18.0+.
+Production-ready Databricks Asset Bundle for deploying and operating the [Valhalla](https://github.com/valhalla/valhalla) open-source routing engine on Databricks Runtime 18.2+.
 
 ## Overview
 
@@ -11,7 +11,7 @@ This project enables large-scale routing computations using Valhalla on Databric
 
 ### Features
 
-- ✅ **DBR 18.0+ Compatible** - Handles GCC 11+ compilation requirements
+- ✅ **DBR 18.2 Compatible (Spark 4.1.0, tested)** - Handles GCC 11+ compilation requirements
 - ✅ **Unity Catalog Integration** - Persistent storage for compiled artifacts and routing tiles
 - ✅ **Multi-Cloud Support** - Works on AWS, Azure, and GCP
 - ✅ **Automated Deployment** - Complete workflow via Databricks Asset Bundles
@@ -38,7 +38,7 @@ flowchart LR
 
 - Databricks workspace (AWS, Azure, or GCP)
 - Unity Catalog enabled
-- **Databricks Runtime 17.3.x LTS** ✅ or **18.0.x** ✅ (standard or Photon)
+- **Databricks Runtime 17.3.x LTS** ✅ or **18.0.x** ✅ or **18.2.x** ✅ (latest tested) (standard or Photon)
 - Permissions to create catalogs, schemas, and volumes
 - Databricks CLI installed ([installation guide](https://docs.databricks.com/dev-tools/cli/index.html))
 
@@ -281,7 +281,7 @@ Contributions welcome! Please ensure:
 - Code follows existing patterns
 - Notebooks include markdown documentation
 - Changes work on all three cloud providers
-- Compiler flags remain for DBR 18.0+ compatibility
+- Compiler flags remain for DBR 18.0+ / 18.2 compatibility
 
 ## References
 
