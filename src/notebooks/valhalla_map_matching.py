@@ -365,13 +365,14 @@ for city, lat, lon in CITIES:
         shape_json = json.dumps(points)
         traces.append((f"{city}_{trip_id:02d}", city, shape_json))
 
-trips_df = spark.createDataFrame(traces, ["trip_id", "city", "shape_json"]).repartition(20)
-print(f"Created {trips_df.count()} GPS traces across {len(CITIES)} French cities")
+N_PARTITIONS = max(20, len(traces) // 2000)
+trips_df = spark.createDataFrame(traces, ["trip_id", "city", "shape_json"]).repartition(N_PARTITIONS)
+print(f"Created {len(traces)} GPS traces across {len(CITIES)} French cities ({N_PARTITIONS} partitions)")
 
 # COMMAND ----------
 
 # DBTITLE 1,Distributed trace_attributes via mapInPandas
-from typing import Iterator, List, Dict, Optional, Tuple
+from typing import Iterator, List, Dict, Optional
 import pandas as pd
 import valhalla
 from valhalla.utils import decode_polyline
@@ -380,6 +381,8 @@ from pyspark.databricks.sql import functions as dbf
 _VALHALLA_MAX_POINTS = 16_000
 _CHUNK_SIZE = 15_000   # stay below the limit
 _CHUNK_OVERLAP = 1     # share one boundary point between chunks for continuity
+assert _CHUNK_SIZE <= _VALHALLA_MAX_POINTS, \
+    f"_CHUNK_SIZE ({_CHUNK_SIZE}) must not exceed Valhalla's {_VALHALLA_MAX_POINTS}-point limit"
 
 def _match_shape(
     actor,
@@ -399,7 +402,11 @@ def _match_shape(
     Returns a merged result dict with:
       edges, matched_coords (decoded from shape), confidence_score, n_chunks.
     Chunks overlap by _CHUNK_OVERLAP points so the matched geometry is continuous.
+    Returns min(confidence_score) across all chunks. None if Valhalla did not return
+    a confidence score for any chunk — common for trace_attributes on short traces.
     """
+    if len(shape) < 2:
+        raise ValueError(f"Trace requires ≥2 points, got {len(shape)}")
     filters = {
         "attributes": [
             "edge.names", "edge.road_class", "edge.speed",
@@ -422,7 +429,7 @@ def _match_shape(
             start = end - _CHUNK_OVERLAP
 
     all_edges: List[Dict] = []
-    all_coords: List[Tuple] = []
+    all_coords: List = []
     min_confidence: Optional[float] = None
 
     for i, chunk in enumerate(chunks):
@@ -440,9 +447,9 @@ def _match_shape(
 
         all_edges.extend(result.get("edges", []))
 
-        coords = decode_polyline(result.get("shape", ""))
-        # Drop the duplicated boundary point from subsequent chunks
-        all_coords.extend(coords[_CHUNK_OVERLAP:] if i > 0 and coords else coords)
+        coords = decode_polyline(result.get("shape", "")) or []
+        skip = _CHUNK_OVERLAP if i > 0 else 0
+        all_coords.extend(coords[skip:])
 
         conf = result.get("confidence_score")
         if conf is not None:
@@ -457,72 +464,103 @@ def _match_shape(
     }
 
 
-def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
-    actor = valhalla.Actor(config_path)   # one actor per Spark task
+_MATCH_CONFIG = dict(MATCH_CONFIG)  # snapshot at submission time; immutable in worker closures
 
-    for pdf in batch_iter:
-        rows = []
-        for _, row in pdf.iterrows():
-            shape = json.loads(row["shape_json"])
-            try:
-                matched = _match_shape(actor, shape, **MATCH_CONFIG)
-                edges  = matched["edges"]
-                coords = matched["matched_coords"]
+def match_traces(batch_iter: Iterator[pd.DataFrame], match_cfg: dict = _MATCH_CONFIG) -> Iterator[pd.DataFrame]:
+    actor = valhalla.Actor(config_path_bc.value)  # H1: use broadcast; config_path_bc defined below
+    try:
+        for pdf in batch_iter:
+            rows = []
+            for _, row in pdf.iterrows():
+                try:
+                    shape = json.loads(row["shape_json"])   # H3: inside try block
+                    matched = _match_shape(actor, shape, **match_cfg)
+                    edges  = matched["edges"]
+                    coords = matched["matched_coords"]
 
-                total_length_km = sum(e.get("length", 0) for e in edges)
-                avg_speed = (
-                    sum(e.get("speed", 0) for e in edges) / len(edges)
-                    if edges else None
-                )
-                has_toll = any(e.get("toll", False) for e in edges)
-                road_classes = list({e.get("road_class") for e in edges if e.get("road_class")})
+                    if not edges:                           # H7: explicit zero-edge error
+                        raise ValueError("Valhalla returned 0 matched edges — trace may be outside tile coverage")
 
-                # WKT for geometry conversion — lon lat order for WKT
-                geometry_wkt = (
-                    "LINESTRING ({})".format(", ".join(f"{lon} {lat}" for lat, lon in coords))
-                    if coords else None
-                )
+                    total_len    = sum(e.get("length", 0) for e in edges)
+                    total_length_km = total_len
+                    avg_speed = (                           # M2: distance-weighted
+                        sum(e.get("speed", 0) * e.get("length", 0) for e in edges) / total_len
+                        if total_len > 0 else None
+                    )
+                    has_toll     = any(e.get("toll", False) for e in edges)
+                    road_classes = list({e.get("road_class") for e in edges if e.get("road_class")})
 
-                # Full result as JSON for VARIANT storage — strip matched_coords
-                # (geometry is stored separately; coords are large and redundant)
-                result_json = json.dumps({
-                    "edges":            edges,
-                    "confidence_score": matched["confidence_score"],
-                    "n_chunks":         matched["n_chunks"],
-                    "n_input_points":   matched["n_input_points"],
-                    "match_config":     MATCH_CONFIG,
-                })
+                    # WKT — lon lat order for WKT standard
+                    geometry_wkt = (
+                        "LINESTRING ({})".format(", ".join(f"{lon} {lat}" for lat, lon in coords))
+                        if coords else None
+                    )
 
-                rows.append({
-                    "trip_id":         row["trip_id"],
-                    "city":            row["city"],
-                    "n_edges":         len(edges),
-                    "total_length_km": round(total_length_km, 3),
-                    "avg_speed_kmh":   round(avg_speed, 1) if avg_speed else None,
-                    "has_toll_road":   has_toll,
-                    "road_classes":    ", ".join(sorted(road_classes)),
-                    "confidence":      matched["confidence_score"],
-                    "geometry_wkt":    geometry_wkt,
-                    "result_json":     result_json,
-                    "error":           None,
-                })
-            except Exception as e:
-                rows.append({
-                    "trip_id":         row["trip_id"],
-                    "city":            row["city"],
-                    "n_edges":         None,
-                    "total_length_km": None,
-                    "avg_speed_kmh":   None,
-                    "has_toll_road":   None,
-                    "road_classes":    None,
-                    "confidence":      None,
-                    "geometry_wkt":    None,
-                    "result_json":     None,
-                    "error":           str(e),
-                })
-        yield pd.DataFrame(rows)
+                    # Slim VARIANT: metadata only, no full edge list
+                    result_json = json.dumps({
+                        "confidence_score": matched["confidence_score"],
+                        "n_chunks":         matched["n_chunks"],
+                        "n_input_points":   matched["n_input_points"],
+                        "match_config":     match_cfg,     # H5: use snapshot
+                    })
 
-from pyspark.sql.functions import parse_json
+                    # Typed edge summary for structured column (M4)
+                    edges_summary = json.dumps([
+                        {
+                            "way_id":     e.get("way_id"),
+                            "road_class": e.get("road_class"),
+                            "length_km":  e.get("length"),
+                            "speed_kmh":  e.get("speed"),
+                            "is_toll":    e.get("toll", False),
+                        }
+                        for e in edges
+                    ])
+
+                    rows.append({
+                        "trip_id":         row["trip_id"],
+                        "city":            row["city"],
+                        "n_edges":         len(edges),
+                        "total_length_km": round(total_length_km, 3),
+                        "avg_speed_kmh":   round(avg_speed, 1) if avg_speed else None,
+                        "has_toll_road":   has_toll,
+                        "road_classes":    ", ".join(sorted(road_classes)),
+                        "confidence":      matched["confidence_score"],
+                        "geometry_wkt":    geometry_wkt,
+                        "result_json":     result_json,
+                        "edges_json":      edges_summary,
+                        "error":           None,
+                    })
+                except Exception as e:                     # H3: typed exception message
+                    rows.append({
+                        "trip_id":         row["trip_id"],
+                        "city":            row["city"],
+                        "n_edges":         None,
+                        "total_length_km": None,
+                        "avg_speed_kmh":   None,
+                        "has_toll_road":   None,
+                        "road_classes":    None,
+                        "confidence":      None,
+                        "geometry_wkt":    None,
+                        "result_json":     None,
+                        "edges_json":      None,
+                        "error":           f"{type(e).__name__}: {e}",
+                    })
+            yield pd.DataFrame(rows)
+    finally:
+        del actor                                          # H1: explicit release
+
+from pyspark.sql.functions import parse_json, from_json
+from pyspark.sql.types import ArrayType, StructType, StructField, LongType, StringType, DoubleType, BooleanType
+
+config_path_bc = spark.sparkContext.broadcast(config_path)  # H1: broadcast config path
+
+edge_schema = ArrayType(StructType([                        # M4: typed edge array
+    StructField("way_id",     LongType()),
+    StructField("road_class", StringType()),
+    StructField("length_km",  DoubleType()),
+    StructField("speed_kmh",  DoubleType()),
+    StructField("is_toll",    BooleanType()),
+]))
 
 matched_df = trips_df.mapInPandas(
     match_traces,
@@ -530,7 +568,7 @@ matched_df = trips_df.mapInPandas(
         trip_id string, city string,
         n_edges int, total_length_km double, avg_speed_kmh double,
         has_toll_road boolean, road_classes string, confidence double,
-        geometry_wkt string, result_json string, error string
+        geometry_wkt string, result_json string, edges_json string, error string
     """
 ).withColumn(
     "geometry",
@@ -538,10 +576,13 @@ matched_df = trips_df.mapInPandas(
 ).withColumn(
     "result",
     parse_json("result_json")
-).drop("geometry_wkt", "result_json")
+).withColumn(
+    "edges",
+    from_json("edges_json", edge_schema)
+).drop("geometry_wkt", "result_json", "edges_json")
 
 matched_df.cache()
-matched_df.count()
+total_count = matched_df.count()   # M1: materialise; reused in failure-rate cell below
 
 # COMMAND ----------
 
@@ -569,11 +610,11 @@ matched_df.filter(matched_df.error.isNull()) \
 # COMMAND ----------
 
 # DBTITLE 1,Failure rate
-total = matched_df.count()
+total_count = matched_df.count()
 failed = matched_df.filter(matched_df.error.isNotNull()).count()
-print(f"Total trips : {total}")
-print(f"Matched     : {total - failed}  ({(total - failed) / total * 100:.1f}%)")
-print(f"Failed      : {failed}  ({failed / total * 100:.1f}%)")
+print(f"Total trips : {total_count}")
+print(f"Matched     : {total_count - failed}  ({(total_count - failed) / total_count * 100:.1f}%)")
+print(f"Failed      : {failed}  ({failed / total_count * 100:.1f}%)")
 
 if failed > 0:
     print("\nSample errors:")
