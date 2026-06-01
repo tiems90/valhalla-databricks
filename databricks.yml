@@ -7,6 +7,7 @@ bundle:
 # Include job and pipeline definitions
 include:
   - resources/valhalla_test_job.yml
+  - databricks.local.yml
 
 # Sync notebooks and source code
 sync:
@@ -52,6 +53,14 @@ variables:
   runtime_engine:
     description: "Runtime engine: STANDARD or PHOTON"
     default: "STANDARD"
+
+  compile_node_type:
+    description: "Node type for compilation tasks (memory-optimised, 32+ cores recommended)"
+    default: "n2-highmem-32"  # GCP — override per cloud: AWS r5.8xlarge, Azure Standard_E32s_v3
+
+  test_node_type:
+    description: "Node type for routing test tasks"
+    default: "n2-standard-8"  # GCP — override per cloud: AWS m5.2xlarge, Azure Standard_D8s_v3
 
 # Multi-cloud targets
 # All targets use mode: development to enable --cluster-id flag for running jobs

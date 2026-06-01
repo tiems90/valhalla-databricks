@@ -35,7 +35,7 @@ resources:
           # Large 32-core cluster for fastest compilation
           new_cluster:
             spark_version: "${var.spark_version}"
-            node_type_id: "n2-highmem-32"  # GCP: 32 vCPUs, 256 GB RAM
+            node_type_id: "${var.compile_node_type}"
             num_workers: 0  # Single node
             data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
             custom_tags:
@@ -65,7 +65,7 @@ resources:
           # Large cluster with init script for fast PBF processing
           new_cluster:
             spark_version: "${var.spark_version}"
-            node_type_id: "n2-highmem-32"  # GCP: 32 vCPUs, 256 GB RAM
+            node_type_id: "${var.compile_node_type}"
             num_workers: 0  # Single node
             data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
             custom_tags:
@@ -100,7 +100,7 @@ resources:
           # Multi-node cluster with init script for testing
           new_cluster:
             spark_version: "${var.spark_version}"
-            node_type_id: "n2-standard-8"  # GCP: 8 vCPUs, 32 GB RAM
+            node_type_id: "${var.test_node_type}"
             num_workers: 2  # Multi-node to test distributed routing
             data_security_mode: "SINGLE_USER"  # Single user dedicated mode with UC support
             custom_tags:
