@@ -39,7 +39,6 @@
 
 # DBTITLE 1,Set Parameters and Ensure Volume Exists
 import os
-import re
 
 dbutils.widgets.text("PBF_URL", "https://download.geofabrik.de/europe/france-latest.osm.pbf", "PBF URL")
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Target Volume Path")
@@ -47,40 +46,30 @@ dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_
 pbf_url = dbutils.widgets.get("PBF_URL")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
 
-# Parse volume path to extract catalog, schema, volume
-volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
-match = re.match(volume_pattern, volume_path)
+catalog, schema, volume = parse_volume_path(volume_path)
 
-if match:
-    catalog, schema, volume = match.groups()
-    
-    # Validate extracted identifiers
-    catalog = validate_identifier(catalog, "catalog name")
-    schema = validate_identifier(schema, "schema name")
-    volume = validate_identifier(volume, "volume name")
-    
-    print(f"🔧 Ensuring volume exists...")
-    
-    # Create catalog (may fail if no permissions)
-    try:
-        spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
-        print(f"✅ Catalog {catalog} ready")
-    except Exception as e:
-        print(f"⚠️  Catalog: {e} (assuming it exists)")
-    
-    # Create schema
-    try:
-        spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
-        print(f"✅ Schema {catalog}.{schema} ready")
-    except Exception as e:
-        print(f"⚠️  Schema: {e} (assuming it exists)")
-    
-    # Create volume
-    try:
-        spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{schema}.{volume}")
-        print(f"✅ Volume {catalog}.{schema}.{volume} ready")
-    except Exception as e:
-        print(f"⚠️  Volume: {e} (assuming it exists)")
+print(f"🔧 Ensuring volume exists...")
+
+# Create catalog (may fail if no permissions)
+try:
+    spark.sql(f"CREATE CATALOG IF NOT EXISTS {catalog}")
+    print(f"✅ Catalog {catalog} ready")
+except Exception as e:
+    print(f"⚠️  Catalog: {e} (assuming it exists)")
+
+# Create schema
+try:
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog}.{schema}")
+    print(f"✅ Schema {catalog}.{schema} ready")
+except Exception as e:
+    print(f"⚠️  Schema: {e} (assuming it exists)")
+
+# Create volume
+try:
+    spark.sql(f"CREATE VOLUME IF NOT EXISTS {catalog}.{schema}.{volume}")
+    print(f"✅ Volume {catalog}.{schema}.{volume} ready")
+except Exception as e:
+    print(f"⚠️  Volume: {e} (assuming it exists)")
 
 # Verify volume is accessible before starting the expensive tile build
 try:

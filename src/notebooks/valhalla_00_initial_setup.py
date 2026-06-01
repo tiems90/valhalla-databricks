@@ -39,23 +39,11 @@
 
 # DBTITLE 1,Configure Volume Path and Ensure It Exists
 import os
-import re
 
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Target Volume Path")
 vol_base = dbutils.widgets.get("VOLUME_PATH")
 
-# Parse volume path to extract catalog, schema, volume
-volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
-match = re.match(volume_pattern, vol_base)
-
-if not match:
-    raise ValueError(f"Invalid volume path format: {vol_base}. Expected: /Volumes/catalog/schema/volume")
-
-catalog, schema, volume = match.groups()
-
-catalog = validate_identifier(catalog, "catalog name")
-schema = validate_identifier(schema, "schema name")
-volume = validate_identifier(volume, "volume name")
+catalog, schema, volume = parse_volume_path(vol_base)
 
 print(f"🔧 Ensuring volume exists...")
 print(f"   Catalog: {catalog}")

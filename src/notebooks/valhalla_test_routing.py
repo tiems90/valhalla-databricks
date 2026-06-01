@@ -20,23 +20,12 @@
 # DBTITLE 1,Setup and Configuration
 import json
 import sys
-import re
 from pathlib import Path
 
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_region", "Volume Path")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
 
-# Validate volume path format and identifiers
-volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
-match = re.match(volume_pattern, volume_path)
-
-if match:
-    catalog, schema, volume = match.groups()
-
-    # Validate identifiers
-    validate_identifier(catalog, "catalog name")
-    validate_identifier(schema, "schema name")
-    validate_identifier(volume, "volume name")
+catalog, schema, volume = parse_volume_path(volume_path)
 
 config_path = f"{volume_path}/tiles/valhalla.json"
 

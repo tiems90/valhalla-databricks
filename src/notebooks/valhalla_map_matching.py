@@ -303,20 +303,11 @@ CITIES = [
     ("Grenoble",   45.1885,  5.7245),
 ]
 
-def _bearing(lat1, lon1, lat2, lon2):
-    """Compass bearing (0–360°) from point 1 to point 2."""
-    dlon = math.radians(lon2 - lon1)
-    lat1_r, lat2_r = math.radians(lat1), math.radians(lat2)
-    x = math.sin(dlon) * math.cos(lat2_r)
-    y = math.cos(lat1_r) * math.sin(lat2_r) - math.sin(lat1_r) * math.cos(lat2_r) * math.cos(dlon)
-    return round((math.degrees(math.atan2(x, y)) + 360) % 360, 1)
-
 def simulate_trip(city_name, lat, lon, n_points=8, base_noise_m=12, start_time=1_700_000_000):
     """
     Simulate a short urban GPS trace with per-point metadata:
       - time       : Unix timestamp (~5s between points, ~60-90m steps → ~50-65 km/h urban speed)
       - accuracy   : GPS accuracy in metres (varies to simulate signal quality)
-      - heading    : compass bearing to next point (helps Valhalla disambiguate parallel roads)
 
     These fields are passed straight through to Valhalla's per-point shape API.
     For real fleet data, substitute actual HDOP-derived accuracy and device heading.
@@ -342,17 +333,12 @@ def simulate_trip(city_name, lat, lon, n_points=8, base_noise_m=12, start_time=1
         noisy_lat = true_lat + rng.gauss(0, noise_m / 111_000)
         noisy_lon = true_lon + rng.gauss(0, noise_m / (111_000 * math.cos(math.radians(true_lat))))
 
-        # Heading toward next true point (undefined for last point — omit)
         point = {
             "lat":      round(noisy_lat, 6),
             "lon":      round(noisy_lon, 6),
             "time":     start_time + i * 5,
             "accuracy": point_accuracy,
         }
-        if i < len(true_points) - 1:
-            next_lat, next_lon = true_points[i + 1]
-            point["heading"] = _bearing(true_lat, true_lon, next_lat, next_lon)
-            point["heading_tolerance"] = 45
 
         points.append(point)
     return points
@@ -361,7 +347,7 @@ traces = []
 for city, lat, lon in CITIES:
     for trip_id in range(10):  # 10 trips per city = 100 trips total
         points = simulate_trip(city, lat, lon)
-        # shape_json preserves all per-point fields (time, accuracy, heading, etc.)
+        # shape_json preserves all per-point fields (time, accuracy, etc.)
         shape_json = json.dumps(points)
         traces.append((f"{city}_{trip_id:02d}", city, shape_json))
 
@@ -372,217 +358,20 @@ print(f"Created {len(traces)} GPS traces across {len(CITIES)} French cities ({N_
 # COMMAND ----------
 
 # DBTITLE 1,Distributed trace_attributes via mapInPandas
-from typing import Iterator, List, Dict, Optional
-import pandas as pd
-import valhalla
-from valhalla.utils import decode_polyline
+from pyspark.sql.functions import parse_json, from_json
 from pyspark.databricks.sql import functions as dbf
 
-_VALHALLA_MAX_POINTS = 16_000
-_CHUNK_SIZE = 15_000   # stay below the limit
-_CHUNK_OVERLAP = 1     # share one boundary point between chunks for continuity
-assert _CHUNK_SIZE <= _VALHALLA_MAX_POINTS, \
-    f"_CHUNK_SIZE ({_CHUNK_SIZE}) must not exceed Valhalla's {_VALHALLA_MAX_POINTS}-point limit"
+_MATCH_CONFIG = dict(MATCH_CONFIG)  # snapshot at submission time
+match_fn      = make_match_traces(config_path, _MATCH_CONFIG)
 
-def _match_shape(
-    actor,
-    shape: List[Dict],
-    costing: str = "auto",
-    gps_accuracy: int = 10,
-    search_radius: int = 50,
-    shape_match: str = "walk_or_snap",
-    turn_penalty_factor: int = 100,
-    breakage_distance: int = 2000,
-    interpolation_distance: int = 10,
-) -> Dict:
-    """
-    Run trace_attributes on a shape of any length, automatically splitting into
-    chunks of _CHUNK_SIZE when the shape exceeds _VALHALLA_MAX_POINTS.
-
-    Returns a merged result dict with:
-      edges, matched_coords (decoded from shape), confidence_score, n_chunks.
-    Chunks overlap by _CHUNK_OVERLAP points so the matched geometry is continuous.
-    Returns min(confidence_score) across all chunks. None if Valhalla did not return
-    a confidence score for any chunk — common for trace_attributes on short traces.
-    """
-    if len(shape) < 2:
-        raise ValueError(f"Trace requires ≥2 points, got {len(shape)}")
-    filters = {
-        "attributes": [
-            "edge.names", "edge.road_class", "edge.speed",
-            "edge.length", "edge.toll", "edge.way_id",
-            "edge.surface", "edge.use", "edge.tunnel", "edge.bridge",
-        ],
-        "action": "include",
-    }
-
-    # Build chunk windows
-    if len(shape) <= _CHUNK_SIZE:
-        chunks = [shape]
-    else:
-        chunks, start = [], 0
-        while start < len(shape):
-            end = min(start + _CHUNK_SIZE, len(shape))
-            chunks.append(shape[start:end])
-            if end == len(shape):
-                break
-            start = end - _CHUNK_OVERLAP
-
-    all_edges: List[Dict] = []
-    all_coords: List = []
-    min_confidence: Optional[float] = None
-
-    for i, chunk in enumerate(chunks):
-        result = actor.trace_attributes({
-            "shape": chunk,
-            "costing": costing,
-            "shape_match": shape_match,
-            "gps_accuracy": gps_accuracy,
-            "search_radius": search_radius,
-            "turn_penalty_factor": turn_penalty_factor,
-            "breakage_distance": breakage_distance,
-            "interpolation_distance": interpolation_distance,
-            "filters": filters,
-        })
-
-        all_edges.extend(result.get("edges", []))
-
-        coords = decode_polyline(result.get("shape", "")) or []
-        skip = _CHUNK_OVERLAP if i > 0 else 0
-        all_coords.extend(coords[skip:])
-
-        conf = result.get("confidence_score")
-        if conf is not None:
-            min_confidence = conf if min_confidence is None else min(min_confidence, conf)
-
-    return {
-        "edges":            all_edges,
-        "matched_coords":   all_coords,   # decoded (lat, lon) tuples
-        "confidence_score": min_confidence,
-        "n_chunks":         len(chunks),
-        "n_input_points":   len(shape),
-    }
-
-
-_MATCH_CONFIG = dict(MATCH_CONFIG)  # snapshot at submission time; immutable in worker closures
-
-def match_traces(batch_iter: Iterator[pd.DataFrame], match_cfg: dict = _MATCH_CONFIG) -> Iterator[pd.DataFrame]:
-    actor = valhalla.Actor(config_path_bc.value)  # H1: use broadcast; config_path_bc defined below
-    try:
-        for pdf in batch_iter:
-            rows = []
-            for _, row in pdf.iterrows():
-                try:
-                    shape = json.loads(row["shape_json"])   # H3: inside try block
-                    matched = _match_shape(actor, shape, **match_cfg)
-                    edges  = matched["edges"]
-                    coords = matched["matched_coords"]
-
-                    if not edges:                           # H7: explicit zero-edge error
-                        raise ValueError("Valhalla returned 0 matched edges — trace may be outside tile coverage")
-
-                    total_len    = sum(e.get("length", 0) for e in edges)
-                    total_length_km = total_len
-                    avg_speed = (                           # M2: distance-weighted
-                        sum(e.get("speed", 0) * e.get("length", 0) for e in edges) / total_len
-                        if total_len > 0 else None
-                    )
-                    has_toll     = any(e.get("toll", False) for e in edges)
-                    road_classes = list({e.get("road_class") for e in edges if e.get("road_class")})
-
-                    # WKT — lon lat order for WKT standard
-                    geometry_wkt = (
-                        "LINESTRING ({})".format(", ".join(f"{lon} {lat}" for lat, lon in coords))
-                        if coords else None
-                    )
-
-                    # Slim VARIANT: metadata only, no full edge list
-                    result_json = json.dumps({
-                        "confidence_score": matched["confidence_score"],
-                        "n_chunks":         matched["n_chunks"],
-                        "n_input_points":   matched["n_input_points"],
-                        "match_config":     match_cfg,     # H5: use snapshot
-                    })
-
-                    # Typed edge summary for structured column (M4)
-                    edges_summary = json.dumps([
-                        {
-                            "way_id":     e.get("way_id"),
-                            "road_class": e.get("road_class"),
-                            "length_km":  e.get("length"),
-                            "speed_kmh":  e.get("speed"),
-                            "is_toll":    e.get("toll", False),
-                        }
-                        for e in edges
-                    ])
-
-                    rows.append({
-                        "trip_id":         row["trip_id"],
-                        "city":            row["city"],
-                        "n_edges":         len(edges),
-                        "total_length_km": round(total_length_km, 3),
-                        "avg_speed_kmh":   round(avg_speed, 1) if avg_speed else None,
-                        "has_toll_road":   has_toll,
-                        "road_classes":    ", ".join(sorted(road_classes)),
-                        "confidence":      matched["confidence_score"],
-                        "geometry_wkt":    geometry_wkt,
-                        "result_json":     result_json,
-                        "edges_json":      edges_summary,
-                        "error":           None,
-                    })
-                except Exception as e:                     # H3: typed exception message
-                    rows.append({
-                        "trip_id":         row["trip_id"],
-                        "city":            row["city"],
-                        "n_edges":         None,
-                        "total_length_km": None,
-                        "avg_speed_kmh":   None,
-                        "has_toll_road":   None,
-                        "road_classes":    None,
-                        "confidence":      None,
-                        "geometry_wkt":    None,
-                        "result_json":     None,
-                        "edges_json":      None,
-                        "error":           f"{type(e).__name__}: {e}",
-                    })
-            yield pd.DataFrame(rows)
-    finally:
-        del actor                                          # H1: explicit release
-
-from pyspark.sql.functions import parse_json, from_json
-from pyspark.sql.types import ArrayType, StructType, StructField, LongType, StringType, DoubleType, BooleanType
-
-config_path_bc = spark.sparkContext.broadcast(config_path)  # H1: broadcast config path
-
-edge_schema = ArrayType(StructType([                        # M4: typed edge array
-    StructField("way_id",     LongType()),
-    StructField("road_class", StringType()),
-    StructField("length_km",  DoubleType()),
-    StructField("speed_kmh",  DoubleType()),
-    StructField("is_toll",    BooleanType()),
-]))
-
-matched_df = trips_df.mapInPandas(
-    match_traces,
-    schema="""
-        trip_id string, city string,
-        n_edges int, total_length_km double, avg_speed_kmh double,
-        has_toll_road boolean, road_classes string, confidence double,
-        geometry_wkt string, result_json string, edges_json string, error string
-    """
-).withColumn(
-    "geometry",
-    dbf.st_setsrid(dbf.try_to_geometry("geometry_wkt"), 4326)
-).withColumn(
-    "result",
-    parse_json("result_json")
-).withColumn(
-    "edges",
-    from_json("edges_json", edge_schema)
-).drop("geometry_wkt", "result_json", "edges_json")
+matched_df = trips_df.mapInPandas(match_fn, schema=MATCH_TRACES_SCHEMA) \
+    .withColumn("geometry", dbf.st_setsrid(dbf.try_to_geometry("geometry_wkt"), 4326)) \
+    .withColumn("result",   parse_json("result_json")) \
+    .withColumn("edges",    from_json("edges_json", edge_schema)) \
+    .drop("geometry_wkt", "result_json", "edges_json")
 
 matched_df.cache()
-total_count = matched_df.count()   # M1: materialise; reused in failure-rate cell below
+total_count = matched_df.count()
 
 # COMMAND ----------
 

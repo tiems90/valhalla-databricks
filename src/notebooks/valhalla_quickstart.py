@@ -107,8 +107,6 @@ volume = 'valhalla_france'
 # schema = 'your_schema'
 # volume = 'valhalla_us'
 
-import re
-
 catalog = validate_identifier(catalog, "catalog name")
 schema = validate_identifier(schema, "schema name")
 volume = validate_identifier(volume, "volume name")
