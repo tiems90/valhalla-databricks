@@ -29,7 +29,72 @@ import os
 
 dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_france", "Volume Path")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
-config_path = f"{volume_path}/tiles/valhalla.json"
+config_path  = f"{volume_path}/tiles/valhalla.json"
+
+_, _, _vol = parse_volume_path(volume_path)
+
+# Region-specific example traces — keyed on volume name fragment.
+# Add a new entry here when building tiles for a new region.
+_REGION_EXAMPLES = {
+    "france": {
+        "trace_route_path": [        # Arc de Triomphe → Place de la Concorde
+            (48.8738, 2.2950), (48.8718, 2.3010), (48.8700, 2.3070),
+            (48.8686, 2.3130), (48.8673, 2.3190), (48.8661, 2.3250), (48.8655, 2.3305),
+        ],
+        "trace_attributes_path": [  # Boulevard Périphérique, Porte de Bercy → Porte de Vincennes
+            (48.8317, 2.3828), (48.8325, 2.3880), (48.8330, 2.3940),
+            (48.8338, 2.3990), (48.8347, 2.4052), (48.8356, 2.4090),
+        ],
+        "cities": [
+            ("Paris",       48.8566,  2.3522), ("Lyon",        45.7640,  4.8357),
+            ("Marseille",   43.2965,  5.3698), ("Toulouse",    43.6047,  1.4442),
+            ("Bordeaux",    44.8378, -0.5792), ("Nantes",      47.2184, -1.5536),
+            ("Strasbourg",  48.5734,  7.7521), ("Nice",        43.7102,  7.2620),
+            ("Rennes",      48.1173, -1.6778), ("Grenoble",    45.1885,  5.7245),
+        ],
+    },
+    "luxembourg": {
+        "trace_route_path": [        # Luxembourg City centre → Kirchberg district
+            (49.6117, 6.1319), (49.6135, 6.1360), (49.6152, 6.1398),
+            (49.6168, 6.1435), (49.6183, 6.1468), (49.6195, 6.1497),
+        ],
+        "trace_attributes_path": [  # Route d'Arlon, Luxembourg City
+            (49.6100, 6.1150), (49.6108, 6.1190), (49.6115, 6.1230),
+            (49.6120, 6.1270), (49.6124, 6.1310), (49.6117, 6.1319),
+        ],
+        "cities": [
+            ("Luxembourg City", 49.6117, 6.1319), ("Esch-sur-Alzette", 49.4953, 5.9806),
+            ("Differdange",     49.5241, 5.8864), ("Dudelange",        49.4803, 6.0872),
+            ("Ettelbruck",      49.8472, 6.1044),
+        ],
+    },
+    "andorra": {
+        "trace_route_path": [        # Andorra la Vella → Escaldes-Engordany
+            (42.5063, 1.5218), (42.5080, 1.5235), (42.5098, 1.5265),
+            (42.5115, 1.5290), (42.5130, 1.5310), (42.5145, 1.5336),
+        ],
+        "trace_attributes_path": [  # CG-1 main road
+            (42.5078, 1.5211), (42.5120, 1.5260), (42.5160, 1.5305),
+            (42.5200, 1.5340), (42.5240, 1.5370), (42.5280, 1.5390),
+        ],
+        "cities": [
+            ("Andorra la Vella", 42.5063, 1.5218), ("Escaldes",  42.5120, 1.5352),
+            ("Encamp",           42.5353, 1.5800), ("Canillo",   42.5673, 1.5978),
+            ("La Massana",       42.5449, 1.5148),
+        ],
+    },
+}
+
+# Pick the matching config or fall back to the first available
+_region_key = next((k for k in _REGION_EXAMPLES if k in _vol.lower()), None)
+if _region_key is None:
+    raise ValueError(
+        f"No example traces configured for volume '{_vol}'. "
+        f"Add an entry to _REGION_EXAMPLES in the Parameters cell. "
+        f"Known regions: {list(_REGION_EXAMPLES)}"
+    )
+_examples = _REGION_EXAMPLES[_region_key]
+print(f"📍 Region: {_region_key} ({len(_examples['cities'])} cities configured)")
 
 # COMMAND ----------
 
@@ -51,23 +116,15 @@ print(actor.status())
 
 # COMMAND ----------
 
-# DBTITLE 1,Simulate a noisy GPS trace: Paris 8th arrondissement
+# DBTITLE 1,Simulate a noisy GPS trace
 import random
 import math
 import json
 
 random.seed(42)
 
-# True path: Arc de Triomphe → Champs-Élysées → Place de la Concorde
-true_path = [
-    (48.8738, 2.2950),  # Arc de Triomphe
-    (48.8718, 2.3010),
-    (48.8700, 2.3070),
-    (48.8686, 2.3130),
-    (48.8673, 2.3190),
-    (48.8661, 2.3250),
-    (48.8655, 2.3305),  # Place de la Concorde
-]
+true_path = _examples["trace_route_path"]
+print(f"Example trace: {len(true_path)} points ({_region_key} region)")
 
 def add_gps_noise(lat, lon, noise_m=15):
     """Add realistic GPS noise (~15m radius)."""
@@ -116,17 +173,8 @@ for leg in trip.get("legs", []):
 
 # COMMAND ----------
 
-# DBTITLE 1,trace_attributes: Paris Périphérique segment
-# Simulate a trace on the Boulevard Périphérique (Paris ring road)
-# Porte de Bercy → Porte de Charenton → Porte de Vincennes
-peripherique_trace = [
-    (48.8317, 2.3828),  # Porte de Bercy
-    (48.8325, 2.3880),
-    (48.8330, 2.3940),
-    (48.8338, 2.3990),
-    (48.8347, 2.4052),
-    (48.8356, 2.4090),  # Porte de Vincennes area
-]
+# DBTITLE 1,trace_attributes: road segment example
+peripherique_trace = _examples["trace_attributes_path"]
 
 trace_attr_request = {
     "shape": [{"lat": lat, "lon": lon} for lat, lon in peripherique_trace],
@@ -289,19 +337,8 @@ import math
 
 random.seed(0)
 
-# Representative French city centres with short urban drive patterns
-CITIES = [
-    ("Paris",      48.8566,  2.3522),
-    ("Lyon",       45.7640,  4.8357),
-    ("Marseille",  43.2965,  5.3698),
-    ("Toulouse",   43.6047,  1.4442),
-    ("Bordeaux",   44.8378, -0.5792),
-    ("Nantes",     47.2184, -1.5536),
-    ("Strasbourg", 48.5734,  7.7521),
-    ("Nice",       43.7102,  7.2620),
-    ("Rennes",     48.1173, -1.6778),
-    ("Grenoble",   45.1885,  5.7245),
-]
+# City centres for the current region — loaded from _REGION_EXAMPLES in the Parameters cell
+CITIES = _examples["cities"]
 
 def simulate_trip(city_name, lat, lon, n_points=8, base_noise_m=12, start_time=1_700_000_000):
     """
