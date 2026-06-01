@@ -201,7 +201,7 @@ print("")
 
 dbutils.notebook.run(
     path="./valhalla_01_process_pbf",
-    timeout_seconds=7200,  # 2 hour timeout
+    timeout_seconds=86400,  # 24 hour timeout (large regions like France can take several hours)
     arguments={
         "VOLUME_PATH": volume_path,
         "PBF_URL": pbf_url

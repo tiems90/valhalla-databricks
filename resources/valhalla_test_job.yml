@@ -83,8 +83,8 @@ resources:
               spark.databricks.cluster.profile: "singleNode"
             runtime_engine: "${var.runtime_engine}"
           
-          timeout_seconds: 3600  # 1 hour timeout (Andorra should take ~5 min)
-          max_retries: 1  # Retry once if fails
+          timeout_seconds: 86400  # 24 hour timeout (Andorra ~5 min, France ~2-3 hrs, large regions longer)
+          max_retries: 0  # Don't retry on timeout — it will just time out again
         
         # Task 3: Test routing functionality
         # Multi-node cluster to test distributed routing
@@ -113,7 +113,7 @@ resources:
             
             runtime_engine: "${var.runtime_engine}"
           
-          timeout_seconds: 1800  # 30 minute timeout
+          timeout_seconds: 3600  # 1 hour (France tile load + distributed routing)
           max_retries: 1
 
         # Task 4: Map matching examples
@@ -140,7 +140,7 @@ resources:
 
             runtime_engine: "${var.runtime_engine}"
 
-          timeout_seconds: 1800
+          timeout_seconds: 3600  # 1 hour (France tile load + distributed map matching)
           max_retries: 1
 
       # Email notifications on success/failure
