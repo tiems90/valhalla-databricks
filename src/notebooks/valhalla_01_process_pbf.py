@@ -34,6 +34,8 @@
 # COMMAND ----------
 
 # DBTITLE 1,Set Parameters and Ensure Volume Exists
+# MAGIC %run ./valhalla_utils
+
 import os
 import re
 
@@ -42,42 +44,6 @@ dbutils.widgets.text("VOLUME_PATH", "/Volumes/your_catalog/your_schema/valhalla_
 
 pbf_url = dbutils.widgets.get("PBF_URL")
 volume_path = dbutils.widgets.get("VOLUME_PATH")
-
-# Validate identifiers to prevent SQL injection
-# Unity Catalog identifier rules (non-delimited/unquoted identifiers):
-# - Must start with letter (A-Z, a-z) or underscore (_)
-# - Can contain letters, digits (0-9), and underscores
-# - Maximum 255 characters
-# Reference: https://docs.databricks.com/sql/language-manual/sql-ref-identifiers.html
-def validate_identifier(name, identifier_type="identifier"):
-    """
-    Validate Unity Catalog identifier for security.
-    
-    Only allows non-delimited identifiers (no backticks) to prevent SQL injection.
-    Follows Databricks naming rules for catalogs, schemas, and volumes.
-    """
-    if not name:
-        raise ValueError(f"{identifier_type} cannot be empty")
-    
-    if len(name) > 255:
-        raise ValueError(f"{identifier_type} too long: {len(name)} chars (max 255)")
-    
-    # Must start with letter or underscore
-    if not re.match(r'^[a-zA-Z_]', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Must start with a letter (A-Z, a-z) or underscore (_)."
-        )
-    
-    # Can only contain letters, digits, and underscores
-    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
-        raise ValueError(
-            f"Invalid {identifier_type}: '{name}'. "
-            f"Can only contain letters, digits, and underscores. "
-            f"Hyphens and special characters require backtick escaping (not supported for security)."
-        )
-    
-    return name
 
 # Parse volume path to extract catalog, schema, volume
 volume_pattern = r"/Volumes/([^/]+)/([^/]+)/([^/]+)"
