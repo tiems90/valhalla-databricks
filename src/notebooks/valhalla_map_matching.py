@@ -302,10 +302,76 @@ print(f"Created {trips_df.count()} GPS traces across {len(CITIES)} French cities
 # COMMAND ----------
 
 # DBTITLE 1,Distributed trace_attributes via mapInPandas
-from typing import Iterator
+from typing import Iterator, List, Dict, Optional, Tuple
 import pandas as pd
 import valhalla
+from valhalla.utils import decode_polyline
 from pyspark.databricks.sql import functions as dbf
+
+_VALHALLA_MAX_POINTS = 16_000
+_CHUNK_SIZE = 15_000   # stay below the limit
+_CHUNK_OVERLAP = 1     # share one boundary point between chunks for continuity
+
+def _match_shape(
+    actor,
+    shape: List[Dict],
+    costing: str = "auto",
+    gps_accuracy: int = 12,
+    search_radius: int = 50,
+) -> Tuple[List[Dict], List[Tuple], Optional[float]]:
+    """
+    Run trace_attributes on a shape of any length, automatically splitting into
+    chunks of _CHUNK_SIZE when the shape exceeds _VALHALLA_MAX_POINTS.
+
+    Returns (edges, decoded_coords, min_confidence) merged across all chunks.
+    Chunks overlap by _CHUNK_OVERLAP points so the matched geometry is continuous.
+    """
+    filters = {
+        "attributes": [
+            "edge.names", "edge.road_class", "edge.speed",
+            "edge.length", "edge.toll", "edge.way_id",
+        ],
+        "action": "include",
+    }
+
+    # Build chunk windows
+    if len(shape) <= _CHUNK_SIZE:
+        chunks = [shape]
+    else:
+        chunks, start = [], 0
+        while start < len(shape):
+            end = min(start + _CHUNK_SIZE, len(shape))
+            chunks.append(shape[start:end])
+            if end == len(shape):
+                break
+            start = end - _CHUNK_OVERLAP
+
+    all_edges: List[Dict] = []
+    all_coords: List[Tuple] = []
+    min_confidence: Optional[float] = None
+
+    for i, chunk in enumerate(chunks):
+        result = actor.trace_attributes({
+            "shape": chunk,
+            "costing": costing,
+            "shape_match": "walk_or_snap",
+            "gps_accuracy": gps_accuracy,
+            "search_radius": search_radius,
+            "filters": filters,
+        })
+
+        all_edges.extend(result.get("edges", []))
+
+        coords = decode_polyline(result.get("shape", ""))
+        # Drop the duplicated boundary point from subsequent chunks
+        all_coords.extend(coords[_CHUNK_OVERLAP:] if i > 0 and coords else coords)
+
+        conf = result.get("confidence_score")
+        if conf is not None:
+            min_confidence = conf if min_confidence is None else min(min_confidence, conf)
+
+    return all_edges, all_coords, min_confidence
+
 
 def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
     actor = valhalla.Actor(config_path)   # one actor per Spark task
@@ -315,22 +381,8 @@ def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
         for _, row in pdf.iterrows():
             shape = json.loads(row["shape_json"])
             try:
-                result = actor.trace_attributes({
-                    "shape": shape,
-                    "costing": "auto",
-                    "shape_match": "walk_or_snap",
-                    "gps_accuracy": 12,
-                    "search_radius": 50,
-                    "filters": {
-                        "attributes": [
-                            "edge.names", "edge.road_class", "edge.speed",
-                            "edge.length", "edge.toll", "edge.way_id",
-                        ],
-                        "action": "include"
-                    }
-                })
+                edges, coords, confidence = _match_shape(actor, shape)
 
-                edges = result.get("edges", [])
                 total_length_km = sum(e.get("length", 0) for e in edges)
                 avg_speed = (
                     sum(e.get("speed", 0) for e in edges) / len(edges)
@@ -338,11 +390,7 @@ def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
                 )
                 has_toll = any(e.get("toll", False) for e in edges)
                 road_classes = list({e.get("road_class") for e in edges if e.get("road_class")})
-                confidence = result.get("confidence_score")
 
-                # Reconstruct matched geometry as WKT from shape
-                from valhalla.utils import decode_polyline
-                coords = decode_polyline(result.get("shape", ""))
                 geometry_wkt = (
                     "LINESTRING ({})".format(", ".join(f"{lon} {lat}" for lat, lon in coords))
                     if coords else None
