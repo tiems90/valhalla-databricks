@@ -82,6 +82,8 @@
 # COMMAND ----------
 
 # DBTITLE 1,Define Input Parameters
+# MAGIC %run ./valhalla_utils
+
 # Example configurations for different regions
 # Uncomment the region you want to use:
 
@@ -102,8 +104,6 @@ volume = 'valhalla_france'
 # catalog = 'your_catalog'
 # schema = 'your_schema'
 # volume = 'valhalla_us'
-
-# MAGIC %run ./valhalla_utils
 
 import re
 
