@@ -80,6 +80,13 @@ if match:
     except Exception as e:
         print(f"⚠️  Volume: {e} (assuming it exists)")
 
+# Verify volume is accessible before starting the expensive tile build
+try:
+    dbutils.fs.ls(volume_path)
+    print(f"✅ Volume accessible at: {volume_path}")
+except Exception as e:
+    raise RuntimeError(f"Volume not accessible at {volume_path}: {e}") from e
+
 os.environ["PBF_URL"] = pbf_url
 os.environ["VALHALLA_VOLUME_PATH"] = volume_path
 

@@ -177,9 +177,9 @@ else:
             result = actor.route(query)
             if "trip" in result:
                 success_count += 1
-        except:
+        except Exception:
             pass
-    
+
     elapsed = time.time() - start_time
     throughput = num_tests / elapsed if elapsed > 0 else 0
     
@@ -236,7 +236,7 @@ def route_batch(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
                     "distance_km": summary["length"],
                     "time_min": summary["time"] / 60
                 })
-            except:
+            except Exception as e:
                 results.append({
                     "orig_lat": row.orig_lat,
                     "orig_lon": row.orig_lon,
