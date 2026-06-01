@@ -284,7 +284,7 @@ elif "us" in volume.lower():
         {
             "name": "Portland to San Francisco",
             "locations": [
-                {"lat": 43.6591, "lon": -70.2568, "type": "break", "city": "Portland"},
+                {"lat": 45.5051, "lon": -122.6750, "type": "break", "city": "Portland, OR"},
                 {"lat": 37.7749, "lon": -122.4194, "type": "break", "city": "San Francisco"}
             ]
         },
