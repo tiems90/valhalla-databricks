@@ -253,6 +253,36 @@ for e in result_encoded.get("edges", []):
 
 # COMMAND ----------
 
+# DBTITLE 1,Map matching configuration
+# Tune these before running the distributed section.
+# See: https://valhalla.github.io/valhalla/api/map-matching/api-reference/
+#
+# gps_accuracy      — Gaussian noise radius (metres). Match smartphone GPS: 8–10m, surveyed routes: 2–4m
+# search_radius     — Max distance to candidate road edges (metres, max 100). Lower for dense urban areas.
+# shape_match       — Matching strategy: walk_or_snap (default), map_snap (fuzzy), edge_walk (strict)
+# turn_penalty_factor — Penalises unlikely turns. Raise to 75–150 for noisy vehicle traces, 500 for pedestrians.
+# breakage_distance — Split trace if consecutive points exceed this (metres). Handles GPS dropouts.
+# interpolation_distance — Cluster stationary/jitter points within this radius (metres). Key jitter defence.
+
+dbutils.widgets.text("gps_accuracy",           "10",           "GPS accuracy (m)")
+dbutils.widgets.text("search_radius",          "50",           "Search radius (m)")
+dbutils.widgets.dropdown("shape_match",        "walk_or_snap", ["walk_or_snap", "map_snap", "edge_walk"])
+dbutils.widgets.text("turn_penalty_factor",    "100",          "Turn penalty factor")
+dbutils.widgets.text("breakage_distance",      "2000",         "Breakage distance (m)")
+dbutils.widgets.text("interpolation_distance", "10",           "Interpolation distance (m)")
+
+MATCH_CONFIG = {
+    "gps_accuracy":           int(dbutils.widgets.get("gps_accuracy")),
+    "search_radius":          int(dbutils.widgets.get("search_radius")),
+    "shape_match":            dbutils.widgets.get("shape_match"),
+    "turn_penalty_factor":    int(dbutils.widgets.get("turn_penalty_factor")),
+    "breakage_distance":      int(dbutils.widgets.get("breakage_distance")),
+    "interpolation_distance": int(dbutils.widgets.get("interpolation_distance")),
+}
+print("Map matching config:", MATCH_CONFIG)
+
+# COMMAND ----------
+
 # DBTITLE 1,Generate synthetic fleet GPS traces across France
 import random
 import math
@@ -316,20 +346,26 @@ def _match_shape(
     actor,
     shape: List[Dict],
     costing: str = "auto",
-    gps_accuracy: int = 12,
+    gps_accuracy: int = 10,
     search_radius: int = 50,
-) -> Tuple[List[Dict], List[Tuple], Optional[float]]:
+    shape_match: str = "walk_or_snap",
+    turn_penalty_factor: int = 100,
+    breakage_distance: int = 2000,
+    interpolation_distance: int = 10,
+) -> Dict:
     """
     Run trace_attributes on a shape of any length, automatically splitting into
     chunks of _CHUNK_SIZE when the shape exceeds _VALHALLA_MAX_POINTS.
 
-    Returns (edges, decoded_coords, min_confidence) merged across all chunks.
+    Returns a merged result dict with:
+      edges, matched_coords (decoded from shape), confidence_score, n_chunks.
     Chunks overlap by _CHUNK_OVERLAP points so the matched geometry is continuous.
     """
     filters = {
         "attributes": [
             "edge.names", "edge.road_class", "edge.speed",
             "edge.length", "edge.toll", "edge.way_id",
+            "edge.surface", "edge.use", "edge.tunnel", "edge.bridge",
         ],
         "action": "include",
     }
@@ -354,9 +390,12 @@ def _match_shape(
         result = actor.trace_attributes({
             "shape": chunk,
             "costing": costing,
-            "shape_match": "walk_or_snap",
+            "shape_match": shape_match,
             "gps_accuracy": gps_accuracy,
             "search_radius": search_radius,
+            "turn_penalty_factor": turn_penalty_factor,
+            "breakage_distance": breakage_distance,
+            "interpolation_distance": interpolation_distance,
             "filters": filters,
         })
 
@@ -370,7 +409,13 @@ def _match_shape(
         if conf is not None:
             min_confidence = conf if min_confidence is None else min(min_confidence, conf)
 
-    return all_edges, all_coords, min_confidence
+    return {
+        "edges":            all_edges,
+        "matched_coords":   all_coords,   # decoded (lat, lon) tuples
+        "confidence_score": min_confidence,
+        "n_chunks":         len(chunks),
+        "n_input_points":   len(shape),
+    }
 
 
 def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
@@ -381,7 +426,9 @@ def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
         for _, row in pdf.iterrows():
             shape = json.loads(row["shape_json"])
             try:
-                edges, coords, confidence = _match_shape(actor, shape)
+                matched = _match_shape(actor, shape, **MATCH_CONFIG)
+                edges  = matched["edges"]
+                coords = matched["matched_coords"]
 
                 total_length_km = sum(e.get("length", 0) for e in edges)
                 avg_speed = (
@@ -391,10 +438,21 @@ def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
                 has_toll = any(e.get("toll", False) for e in edges)
                 road_classes = list({e.get("road_class") for e in edges if e.get("road_class")})
 
+                # WKT for geometry conversion — lon lat order for WKT
                 geometry_wkt = (
                     "LINESTRING ({})".format(", ".join(f"{lon} {lat}" for lat, lon in coords))
                     if coords else None
                 )
+
+                # Full result as JSON for VARIANT storage — strip matched_coords
+                # (geometry is stored separately; coords are large and redundant)
+                result_json = json.dumps({
+                    "edges":            edges,
+                    "confidence_score": matched["confidence_score"],
+                    "n_chunks":         matched["n_chunks"],
+                    "n_input_points":   matched["n_input_points"],
+                    "match_config":     MATCH_CONFIG,
+                })
 
                 rows.append({
                     "trip_id":         row["trip_id"],
@@ -404,8 +462,9 @@ def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
                     "avg_speed_kmh":   round(avg_speed, 1) if avg_speed else None,
                     "has_toll_road":   has_toll,
                     "road_classes":    ", ".join(sorted(road_classes)),
-                    "confidence":      confidence,
+                    "confidence":      matched["confidence_score"],
                     "geometry_wkt":    geometry_wkt,
+                    "result_json":     result_json,
                     "error":           None,
                 })
             except Exception as e:
@@ -419,9 +478,12 @@ def match_traces(batch_iter: Iterator[pd.DataFrame]) -> Iterator[pd.DataFrame]:
                     "road_classes":    None,
                     "confidence":      None,
                     "geometry_wkt":    None,
+                    "result_json":     None,
                     "error":           str(e),
                 })
         yield pd.DataFrame(rows)
+
+from pyspark.sql.functions import parse_json
 
 matched_df = trips_df.mapInPandas(
     match_traces,
@@ -429,12 +491,15 @@ matched_df = trips_df.mapInPandas(
         trip_id string, city string,
         n_edges int, total_length_km double, avg_speed_kmh double,
         has_toll_road boolean, road_classes string, confidence double,
-        geometry_wkt string, error string
+        geometry_wkt string, result_json string, error string
     """
 ).withColumn(
     "geometry",
     dbf.st_setsrid(dbf.try_to_geometry("geometry_wkt"), 4326)
-).drop("geometry_wkt")
+).withColumn(
+    "result",
+    parse_json("result_json")
+).drop("geometry_wkt", "result_json")
 
 matched_df.cache()
 matched_df.count()
