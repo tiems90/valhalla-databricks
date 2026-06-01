@@ -356,8 +356,8 @@ BIN_OK=false
 WHL_OK=false
 
 echo "🔍 Checking for cached binaries..."
-ROUTE_FILE=$(find "$CACHE_BIN_DIR" -maxdepth 1 -name "valhalla_*route" 2>/dev/null | head -n1)
-[[ -f "$ROUTE_FILE" ]] && BIN_OK=true
+ROUTE_FILE=$(find "$CACHE_BIN_DIR" -maxdepth 1 -name "valhalla_*" -type f 2>/dev/null | head -n1)
+[[ -n "$ROUTE_FILE" ]] && BIN_OK=true
 
 echo "🔍 Checking for cached wheel..."
 WHEEL_FILE=$(find "$CACHE_WHL_DIR" -maxdepth 1 -name "*.whl" 2>/dev/null | head -n1)
@@ -386,7 +386,7 @@ if [[ "$BIN_OK" == "true" && "$WHL_OK" == "true" ]]; then
   exit 0
 else
   echo "⚠️  Cached binaries or wheel not found!"
-  echo "   BIN_OK=$BIN_OK (looking for valhalla_*route in $CACHE_BIN_DIR)"
+  echo "   BIN_OK=$BIN_OK (looking for valhalla_* binaries in $CACHE_BIN_DIR)"
   echo "   WHL_OK=$WHL_OK (looking for *.whl in $CACHE_WHL_DIR)"
   echo ""
   echo "Please run the valhalla_00_initial_setup notebook first to build and cache Valhalla."
