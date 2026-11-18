@@ -19,6 +19,7 @@
 # MAGIC 2. **Creates an init script** in a shared volume. This script can later be used across all cluster nodes.
 # MAGIC 3. **Downloads and processes a `.pbf` file** (via `valhalla_01_process_pbf.py`), building tiles for routing.
 # MAGIC 4. **Initializes a Valhalla actor** and executes sample route queries.
+# MAGIC 5. **Uses GeoBrix 0.6.0** to check route geometry and display an interactive map.
 # MAGIC
 # MAGIC ---
 # MAGIC
@@ -79,6 +80,22 @@
 # MAGIC
 # MAGIC ✅ Good for getting started  
 # MAGIC 🚀 For scale, use the cluster-wide init script in production
+
+# COMMAND ----------
+
+# DBTITLE 1,Install GeoBrix 0.6.0 for DBR 17.3 / 18
+# MAGIC %pip install "geobrix[vizx] @ https://github.com/databrickslabs/geobrix/releases/download/v0.6.0/geobrix-0.6.0%2Benv5-py3-none-any.whl#sha256=f657ea479dc55f333c322218a5a16c214398772db4868877e950979259e0735b"
+
+# COMMAND ----------
+
+# DBTITLE 1,Restart Python to load the installed spatial libraries
+# Keep installation and restart in the entry notebook so the new environment
+# takes effect before %run imports shared utilities.
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# MAGIC %run ./geobrix_setup
 
 # COMMAND ----------
 
@@ -391,6 +408,39 @@ if "trip" in result and "legs" in result["trip"]:
         print("")
     
     print("=" * 80)
+
+# COMMAND ----------
+
+# DBTITLE 1,Analyze and map the route with GeoBrix
+from pyspark.sql import functions as F
+from pyspark.databricks.sql import functions as dbf
+
+# Decode polyline6 to GeoJSON (longitude, latitude). Keep each leg separate so the map does
+# not draw a connecting segment across a break in a multi-leg route.
+route_rows = [
+    (i, json.dumps(route_shape_geojson(leg["shape"])))
+    for i, leg in enumerate(result["trip"]["legs"])
+]
+route_df = spark.createDataFrame(route_rows, "leg_id int, shape_geojson string") \
+    .withColumn("geometry", dbf.st_setsrid(dbf.st_geomfromgeojson("shape_geojson"), 4326)) \
+    .withColumn(
+        "geometry_validity",
+        F.from_json(vx.st_explainvalidity(dbf.st_asbinary("geometry")),
+                    "valid boolean, reason string, code int, location string"),
+    ) \
+    .drop("shape_geojson")
+
+display(route_df)
+# Use the explicit Spark-to-GeoPandas adapter for GeoBrix 0.6.0's map renderer.
+route_map_gdf = as_gdf(
+    route_df.select("leg_id", dbf.st_astext("geometry").alias("wkt")),
+    max_rows=1000,
+)
+plot_interactive(
+    vector_layer(route_map_gdf, color="#2563eb",
+                 width=4, label=query["name"]),
+    max_embed_mb=3,
+)
 
 # COMMAND ----------
 

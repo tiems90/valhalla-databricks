@@ -79,6 +79,31 @@ def bearing(lat1, lon1, lat2, lon2):
     return round((math.degrees(math.atan2(x, y)) + 360) % 360, 1)
 
 
+def decode_route_polyline(polyline, order="lnglat"):
+    """Decode polyline6 with either the legacy module or current function API."""
+    from valhalla.utils import decode_polyline
+
+    decoder = decode_polyline if callable(decode_polyline) else decode_polyline.decode_polyline
+    return decoder(polyline, precision=6, order=order)
+
+
+def route_shape_geojson(shape):
+    """Convert a Valhalla polyline6 leg shape to longitude/latitude GeoJSON.
+
+    Older Valhalla bindings can ignore shape_format="geojson". Decode explicitly
+    so cached wheels remain usable, while accepting GeoJSON from newer bindings.
+    """
+    if isinstance(shape, dict):
+        if shape.get("type") != "LineString":
+            raise ValueError("Expected a GeoJSON LineString for a route leg")
+        return shape
+
+    return {
+        "type": "LineString",
+        "coordinates": decode_route_polyline(shape, order="lnglat"),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Map matching internals
 # ---------------------------------------------------------------------------
@@ -110,13 +135,12 @@ def _match_shape(
     Returns min(confidence_score) across chunks; None if Valhalla did not populate it
     (common for trace_attributes on short traces).
     """
-    from valhalla.utils import decode_polyline
-
     if len(shape) < 2:
         raise ValueError(f"Trace requires ≥2 points, got {len(shape)}")
 
     filters = {
         "attributes": [
+            "shape", "confidence_score",
             "edge.names", "edge.road_class", "edge.speed",
             "edge.length", "edge.toll", "edge.way_id",
             "edge.surface", "edge.use", "edge.tunnel", "edge.bridge",
@@ -154,7 +178,9 @@ def _match_shape(
 
         all_edges.extend(result.get("edges", []))
 
-        coords = decode_polyline(result.get("shape", "")) or []
+        # Valhalla defaults to (longitude, latitude); the matching helpers and
+        # WKT construction below use (latitude, longitude).
+        coords = decode_route_polyline(result.get("shape", ""), order="latlng") or []
         skip = _CHUNK_OVERLAP if i > 0 else 0
         all_coords.extend(coords[skip:])
 

@@ -21,6 +21,23 @@
 # MAGIC ## Requirements
 # MAGIC - Valhalla init script applied to the cluster (see `valhalla_00_initial_setup.py`)
 # MAGIC - Tiles built for France (see `valhalla_01_process_pbf.py`)
+# MAGIC - GeoBrix 0.6.0 env5 is installed below for geometry analysis and maps (DBR 17.3 / 18).
+
+# COMMAND ----------
+
+# DBTITLE 1,Install GeoBrix 0.6.0 for DBR 17.3 / 18
+# MAGIC %pip install "geobrix[vizx] @ https://github.com/databrickslabs/geobrix/releases/download/v0.6.0/geobrix-0.6.0%2Benv5-py3-none-any.whl#sha256=f657ea479dc55f333c322218a5a16c214398772db4868877e950979259e0735b"
+
+# COMMAND ----------
+
+# DBTITLE 1,Restart Python to load the installed spatial libraries
+# Keep installation and restart in the entry notebook so the new environment
+# takes effect before %run imports shared utilities.
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# MAGIC %run ./geobrix_setup
 
 # COMMAND ----------
 
@@ -77,9 +94,9 @@ _REGION_EXAMPLES = {
             (42.5063, 1.5218), (42.5080, 1.5235), (42.5098, 1.5265),
             (42.5115, 1.5290), (42.5130, 1.5310), (42.5145, 1.5336),
         ],
-        "trace_attributes_path": [  # CG-1 main road
-            (42.5078, 1.5211), (42.5120, 1.5260), (42.5160, 1.5305),
-            (42.5200, 1.5340), (42.5240, 1.5370), (42.5280, 1.5390),
+        "trace_attributes_path": [  # Road-sampled Andorra la Vella → Escaldes trace
+            (42.506319, 1.521790), (42.506812, 1.524089), (42.508641, 1.529889),
+            (42.511989, 1.536486), (42.513367, 1.535650), (42.514578, 1.533635),
         ],
         "cities": [
             ("Andorra la Vella", 42.5063, 1.5218), ("Escaldes",  42.5120, 1.5352),
@@ -151,6 +168,7 @@ trace_route_request = {
     "shape_match": "map_snap",   # fuzzy snap to nearest road segment
     "gps_accuracy": 15,          # match our simulated noise radius
     "search_radius": 50,         # max distance to search for candidate road
+    "shape_format": "polyline6",  # decoded to GeoJSON for GeoBrix below
 }
 
 result = actor.trace_route(trace_route_request)
@@ -166,6 +184,42 @@ print("\nTurn-by-turn:")
 for leg in trip.get("legs", []):
     for m in leg.get("maneuvers", []):
         print(f"  → {m.get('instruction', '')}")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Compare GPS observations with the matched road
+# MAGIC
+# MAGIC GeoBrix overlays the raw observations and the route returned by Valhalla.
+
+# COMMAND ----------
+
+# DBTITLE 1,GeoBrix GPS and road overlay
+from pyspark.databricks.sql import functions as dbf
+
+overlay_rows = [
+    ("Matched road", json.dumps(route_shape_geojson(leg["shape"])))
+    for leg in trip["legs"]
+]
+overlay_rows.append(("GPS observations", json.dumps({
+    "type": "MultiPoint",
+    "coordinates": [[lon, lat] for lat, lon in noisy_trace],
+})))
+overlay_df = spark.createDataFrame(overlay_rows, "layer string, shape_geojson string") \
+    .withColumn("geometry", dbf.st_setsrid(dbf.st_geomfromgeojson("shape_geojson"), 4326)) \
+    .drop("shape_geojson")
+
+# Convert explicitly: the 0.6.0 renderer needs a GeoDataFrame here.
+overlay_gdf = as_gdf(
+    overlay_df.select("layer", dbf.st_astext("geometry").alias("wkt")),
+    max_rows=1000,
+)
+plot_interactive(
+    vector_layer(overlay_gdf, column="layer",
+                 category_colors={"Matched road": "#2563eb", "GPS observations": "#ef4444"},
+                 label="GPS and matched road"),
+    max_embed_mb=3,
+)
 
 # COMMAND ----------
 
@@ -409,6 +463,11 @@ matched_df = trips_df.mapInPandas(match_fn, schema=MATCH_TRACES_SCHEMA) \
     .withColumn("geometry", dbf.st_setsrid(dbf.try_to_geometry("geometry_wkt"), 4326)) \
     .withColumn("result",   parse_json("result_json")) \
     .withColumn("edges",    from_json("edges_json", edge_schema)) \
+    .withColumn(
+        "geometry_validity",
+        from_json(vx.st_explainvalidity(dbf.st_asbinary("geometry")),
+                  "valid boolean, reason string, code int, location string"),
+    ) \
     .drop("geometry_wkt", "result_json", "edges_json")
 
 matched_df.cache()
@@ -436,6 +495,37 @@ matched_df.filter(matched_df.error.isNull()) \
     ) \
     .orderBy("city") \
     .display()
+
+# COMMAND ----------
+
+# DBTITLE 1,GeoBrix geometry quality
+# Runs across all matched rows; inspect the reason for any invalid geometry.
+matched_df.filter(matched_df.error.isNull()) \
+    .groupBy("geometry_validity.valid", "geometry_validity.reason") \
+    .count() \
+    .display()
+
+# COMMAND ----------
+
+# DBTITLE 1,GeoBrix fleet route map
+# Bound the rows and attributes sent to the driver. All rows still participate
+# in the distributed matching and analysis above; this is a preview of up to 1,000 trips.
+map_preview_df = matched_df.filter(
+    F.col("error").isNull() & F.col("geometry_validity.valid")
+).select("trip_id", "city", "avg_speed_kmh", "geometry").limit(1000)
+
+if not map_preview_df.isEmpty():
+    map_preview_gdf = as_gdf(
+        map_preview_df.withColumn("wkt", dbf.st_astext("geometry")).drop("geometry"),
+        max_rows=1000,
+    )
+    plot_interactive(
+        vector_layer(map_preview_gdf, column="avg_speed_kmh",
+                     cmap="viridis", label="Matched trips — speed (km/h)"),
+        max_embed_mb=3,
+    )
+else:
+    print("No valid matched geometries to map; inspect the matching errors and geometry quality above.")
 
 # COMMAND ----------
 

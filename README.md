@@ -1,9 +1,9 @@
 # Valhalla Routing Engine for Databricks
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Databricks](https://img.shields.io/badge/Databricks-Runtime%2018.2%2B-orange.svg)](https://docs.databricks.com/)
+[![Databricks](https://img.shields.io/badge/Databricks-Runtime%2018%20LTS-orange.svg)](https://docs.databricks.com/)
 
-Production-ready Databricks Asset Bundle for deploying and operating the [Valhalla](https://github.com/valhalla/valhalla) open-source routing engine on Databricks Runtime 18.2+.
+Production-ready Databricks Asset Bundle for deploying and operating the [Valhalla](https://github.com/valhalla/valhalla) open-source routing engine on Databricks Runtime 18 LTS.
 
 ## Overview
 
@@ -17,6 +17,7 @@ This project enables large-scale routing computations using Valhalla on Databric
 - ✅ **Automated Deployment** - Complete workflow via Databricks Asset Bundles
 - ✅ **Distributed Routing** - Scale routing computations with Spark
 - ✅ **Multiple Routing Modes** - Auto, bicycle, pedestrian, and more
+- **GeoBrix 0.6.0** - Interactive route maps, GPS overlays, and distributed geometry validity analysis
 
 ### How It Works
 
@@ -113,8 +114,35 @@ databricks bundle run valhalla_test_job -t <target>  # e.g., gcp, azure, or aws
 | [`valhalla_01_process_pbf.py`](src/notebooks/valhalla_01_process_pbf.py) | Process OSM PBF files into routing tiles | 5-60 min |
 | [`valhalla_quickstart.py`](src/notebooks/valhalla_quickstart.py) | Complete end-to-end setup guide | 30-90 min |
 | [`valhalla_test_routing.py`](src/notebooks/valhalla_test_routing.py) | Automated testing suite | 5-10 min |
+| [`valhalla_map_matching.py`](src/notebooks/valhalla_map_matching.py) | GPS map matching, GeoBrix maps, and geometry analysis | Region dependent |
+| [`geobrix_setup.py`](src/notebooks/geobrix_setup.py) | Shared GeoBrix 0.6.0 registration and Spark smoke check | Seconds |
 
 See [NOTEBOOKS.md](NOTEBOOKS.md) for detailed documentation.
+
+## GeoBrix visualization and spatial analysis
+
+The quickstart and map-matching notebooks install the checksum-pinned [GeoBrix v0.6.0](https://github.com/databrickslabs/geobrix/releases/tag/v0.6.0)
+`env5` wheel with the `vizx` extra, restart Python, then load
+[`geobrix_setup.py`](src/notebooks/geobrix_setup.py) to call `gbx.register(spark)`.
+Installation and restart run before application state is created. This wheel supports
+DBR 17.3 and 18, including the bundle's default DBR 18 LTS, and requires Python 3.12.
+It is a notebook dependency; local Databricks Connect dependencies are unchanged.
+Compute needs access to GitHub release assets and the Python package index during installation.
+
+Valhalla calculates routes and matches GPS traces. GeoBrix checks the output geometry
+and renders interactive maps: the quickstart maps each route leg, and map matching
+overlays GPS observations on the matched road and previews fleet routes colored by speed.
+Fleet geometry checks run on the full Spark DataFrame. The fleet map collects at most
+1,000 trips, and interactive maps use a 3 MiB embed budget with GeoBrix's static fallback.
+Databricks native ST functions handle GeoJSON/WKB conversion and EPSG:4326 geometry.
+
+GeoBrix brings its native spatial dependencies in the wheel. Keep the existing Valhalla
+init script for routing binaries and tiles. If upgrading to DBR 19, switch the GeoBrix
+install to the release's `env6` wheel and its checksum, and update the version assertion
+in `geobrix_setup.py`; the install cells are in both entry notebooks. The Valhalla
+workflow needs separate runtime validation.
+
+Runtime verification results are recorded in [RUNTIME_TESTING.md](RUNTIME_TESTING.md#geobrix-060-integration-verification).
 
 ## Architecture
 

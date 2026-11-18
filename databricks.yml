@@ -48,7 +48,7 @@ variables:
   
   spark_version:
     description: "Databricks Runtime version for all tasks"
-    default: "18.2.x-scala2.13"
+    default: "18.x-scala2.13"
   
   runtime_engine:
     description: "Runtime engine: STANDARD or PHOTON"

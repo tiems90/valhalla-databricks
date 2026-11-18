@@ -2,6 +2,27 @@
 
 Comprehensive workflow for testing Valhalla compilation and functionality against new Databricks runtimes.
 
+## GeoBrix 0.6.0 integration verification
+
+Verified on **2026-11-18** using GCP dedicated compute, **DBR 18 LTS**
+(`18.x-scala2.13`, Spark 4.1, Python 3.12), one worker, GeoBrix **0.6.0+env5**,
+and cached Valhalla **3.6.2** binaries and Andorra tiles. The current runtime key is
+`18.x-scala2.13`; the bundle default uses this key instead of the unavailable
+`18.2.x-scala2.13` identifier.
+
+- The complete map-matching notebook ran successfully: **50/50 trips matched** and
+  all **50 geometries passed** GeoBrix validity checks.
+- GPS overlays, the fleet speed map, and the quickstart route visualization cell
+  generated interactive maps. Longitude/latitude bounds remained within Andorra.
+- **Eight executor checks across four partitions** confirmed the GeoBrix env5 version.
+- The cached Valhalla route and trace helpers passed direct checks with **199 route
+  points** and **157 matched points across 34 edges**.
+
+This run reused existing tiles and tested the actual quickstart visualization cell;
+it did not rerun the compilation or PBF-processing steps. The integration uses an
+entry-notebook Python restart after installation, explicit `as_gdf` map adapters,
+and polyline conversion compatible with both legacy and current Valhalla decoders.
+
 ## Table of Contents
 
 1. [Introduction](#introduction)

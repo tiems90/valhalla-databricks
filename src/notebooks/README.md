@@ -2,6 +2,13 @@
 
 This directory contains Databricks notebooks for installing, configuring, and using the Valhalla routing engine on Databricks Runtime 18.0 (GCP).
 
+The quickstart and map-matching notebooks also use **GeoBrix v0.6.0** for interactive
+maps and geometry validity analysis. Each installs the checksum-pinned env5 wheel
+with `[vizx]` for DBR 17.3 / 18 (Python 3.12), restarts Python, and then loads
+`geobrix_setup.py` to register GeoBrix and run a Spark smoke check. Compute needs access to GitHub release assets
+and the Python package index. Fleet maps preview up to 1,000 valid trips; distributed
+analysis uses all results. See [GeoBrix usage](../../NOTEBOOKS.md#geobrix-visualization-and-analysis).
+
 > **📖 For comprehensive documentation**, see the [Design Document](../../context/valhalla_databricks_design_doc.md)
 
 ## 🎯 Quick Start

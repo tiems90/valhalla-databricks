@@ -8,6 +8,43 @@ Comprehensive guide to all Valhalla notebooks included in this repository.
 2. [valhalla_01_process_pbf.py](#valhalla_01_process_pbfpy)
 3. [valhalla_quickstart.py](#valhalla_quickstartpy)
 4. [valhalla_test_routing.py](#valhalla_test_routingpy)
+5. [GeoBrix visualization and analysis](#geobrix-visualization-and-analysis)
+
+## GeoBrix visualization and analysis
+
+The quickstart and map-matching notebooks install the checksum-pinned GeoBrix
+**0.6.0+env5** wheel with `vizx` dependencies for DBR 17.3 / 18 (Python 3.12).
+Each entry notebook runs `%pip` in its own installation cell and then calls
+`dbutils.library.restartPython()` before loading application state. Keeping these
+steps at the entry notebook level ensures the updated Python environment is active.
+
+[`geobrix_setup.py`](src/notebooks/geobrix_setup.py) then registers functions and
+readers through `gbx.register(spark)` and executes a geometry validity smoke check
+on Spark. Both entry notebooks load it with `%run ./geobrix_setup` after the restart.
+To use the shared setup from another notebook, copy the installation and restart
+cells from an entry notebook first.
+
+The bundle syncs the shared notebook with the examples; no extra job library configuration
+is required. Installation downloads the checksum-pinned release wheel from GitHub and
+dependencies from the Python package index. Run an entry notebook directly as a job;
+when composing notebooks, complete installation and restart in the caller before
+using `%run` to load code that imports GeoBrix.
+
+- **Quickstart:** decodes Valhalla polyline6 route shapes to GeoJSON, creates an EPSG:4326
+  geometry for each leg, checks validity with VectorX, and renders a VizX route map.
+- **Map matching:** compares raw GPS observations with the matched road, adds a
+  `geometry_validity` struct (`valid`, `reason`, `code`, `location`) to distributed results,
+  reports geometry quality, and maps up to 1,000 valid matched trips colored by speed.
+
+Maps use GeoBrix `as_gdf` to convert a capped WKT projection to a GeoDataFrame.
+The explicit adapter supports the 0.6.0 renderer; native geometry stays in Spark
+for distributed analysis. Polyline conversion supports cached Valhalla wheels
+that ignore requests for GeoJSON shapes.
+
+Maps have a 3 MiB embed budget and fall back to static rendering for oversized output.
+The map row limit affects the preview only; geometry analysis processes the full dataset.
+Valhalla still handles all routing, tile generation, and trace matching, with its existing
+init script. GeoBrix uses its bundled native libraries and the Python execution level.
 
 ---
 
